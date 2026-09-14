@@ -30,12 +30,30 @@ export const bcryptConfig = registerAs('bcrypt', () => ({
   rounds: parseInt(process.env.BCRYPT_ROUNDS, 10) || 12,
 }));
 
-export const redisConfig = registerAs('redis', () => ({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT, 10) || 6379,
-  password: process.env.REDIS_PASSWORD || undefined,
-  db: parseInt(process.env.REDIS_DB, 10) || 0,
-}));
+export const redisConfig = registerAs('redis', () => {
+  // Priority: REDIS_URL (single DSN) > REDIS_HOST/PORT/PASSWORD (individual vars)
+  // Docker compose sets REDIS_URL=redis://redis:6379
+  // Local dev sets REDIS_URL=redis://localhost:6379
+  const url = process.env.REDIS_URL;
+  if (url) {
+    const parsed = new URL(url);
+    return {
+      url,
+      host: parsed.hostname,
+      port: parseInt(parsed.port, 10) || 6379,
+      password: parsed.password || undefined,
+      db: parseInt(parsed.pathname.replace('/', ''), 10) || 0,
+    };
+  }
+  // Fallback to individual vars (backwards compat)
+  return {
+    url: undefined,
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT, 10) || 6379,
+    password: process.env.REDIS_PASSWORD || undefined,
+    db: parseInt(process.env.REDIS_DB, 10) || 0,
+  };
+});
 
 export const seedConfig = registerAs('seed', () => ({
   adminUsername: process.env.SEED_ADMIN_USERNAME || 'admin',

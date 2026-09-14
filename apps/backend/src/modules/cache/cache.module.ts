@@ -27,9 +27,13 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
   constructor(private config: ConfigService) {}
 
   async onModuleInit() {
-    const host = this.config.get<string>('redis.host') || 'localhost';
-    const port = this.config.get<number>('redis.port') || 6379;
-    const password = this.config.get<string>('redis.password') || undefined;
+    // Read from REDIS_URL first (single DSN), then fall back to host/port
+    const redisUrl      = this.config.get<string>('redis.url');
+    const host          = this.config.get<string>('redis.host') || 'localhost';
+    const port          = this.config.get<number>('redis.port') || 6379;
+    const password      = this.config.get<string>('redis.password') || undefined;
+    const db            = this.config.get<number>('redis.db') || 0;
+    const displayTarget = redisUrl ?? `${host}:${port}`;
 
     try {
       let Redis: any;
@@ -41,15 +45,14 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      this.client = new Redis({
-        host,
-        port,
-        password,
-        lazyConnect: true,
-        connectTimeout: 3000,
-        maxRetriesPerRequest: 1,
-        enableOfflineQueue: false,
-      });
+      // Build connection options — prefer URL over individual parts
+      const connectionOpts: any = redisUrl
+        ? { lazyConnect: true, connectTimeout: 3000, maxRetriesPerRequest: 1, enableOfflineQueue: false }
+        : { host, port, password, db, lazyConnect: true, connectTimeout: 3000, maxRetriesPerRequest: 1, enableOfflineQueue: false };
+
+      this.client = redisUrl
+        ? new Redis(redisUrl, connectionOpts)
+        : new Redis(connectionOpts);
 
       this.client.on('error', (err: Error) => {
         if (this.connected) {
@@ -60,7 +63,7 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
       this.client.on('connect', () => {
         this.connected = true;
-        this.logger.log(`Redis connected at ${host}:${port}`);
+        this.logger.log(`Redis connected at ${displayTarget}`);
       });
 
       await this.client.connect().catch(() => {
