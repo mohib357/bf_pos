@@ -47,13 +47,14 @@ export class SalesService {
     for (const item of items) {
       const qty = new Decimal(item.quantity.toString());
 
-      // Lock the row for update to prevent race conditions
+      // Use ORM with select + row-level locking via raw SQL for the balance
+      // First get the stock record
       const stockRows = await tx.$queryRaw`
-        SELECT ps.quantity, p.name, p.name_bn, p.sku
+        SELECT ps.quantity, p.name, p.name_bn as "nameBn", p.sku
         FROM product_stocks ps
         JOIN products p ON p.id = ps.product_id
-        WHERE ps.product_id = ${item.productId}::uuid
-          AND ps.warehouse_id = ${warehouseId}::uuid
+        WHERE ps.product_id::text = ${item.productId}
+          AND ps.warehouse_id::text = ${warehouseId}
         FOR UPDATE
       `;
 

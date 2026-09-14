@@ -32,10 +32,12 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
     const password = this.config.get<string>('redis.password') || undefined;
 
     try {
-      // Dynamic import — ioredis is optional dependency
-      const { default: Redis } = await import('ioredis').catch(() => ({ default: null }));
-      if (!Redis) {
-        this.logger.warn('ioredis not installed — using in-memory fallback cache');
+      let Redis: any;
+      try {
+        const ioredis = require('ioredis');
+        Redis = ioredis.default ?? ioredis;
+      } catch {
+        this.logger.warn('ioredis not found — using in-memory fallback cache');
         return;
       }
 

@@ -1,0 +1,114 @@
+﻿  console.log
+      Stock before: BOOK-SCH-001=42, BOOK-ISL-001=16
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:98:13)
+
+  console.log
+      Created: INV-000005 (ID: 275a23d7-e5f3-4a5b-83e6-16094b119ecc)
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:125:13)
+
+  console.log
+      Total: 860, Paid: 860, Due: 0
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:126:13)
+
+  console.log
+      Journal entries created: 2
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:155:13)
+
+  console.log
+      JE-000010 [SALE]: Dr=860.00 Cr=860.00 ΓåÆ Γ£ô BALANCED
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:163:15)
+
+  console.log
+      JE-000011 [SALE]: Dr=640.00 Cr=640.00 ΓåÆ Γ£ô BALANCED
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:163:15)
+
+  console.log
+      JE-000010: line Dr=860.00 Cr=860.00
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:190:15)
+
+  console.log
+      JE-000011: line Dr=640.00 Cr=640.00
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:190:15)
+
+  console.log
+      Movements: BOOK-SCH-001 qty=3 | BOOK-ISL-001 qty=2
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:229:13)
+
+  console.log
+      BOOK-SCH-001: 42 ΓåÆ 39 (expected 39)
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:251:13)
+
+  console.log
+      BOOK-ISL-001: 16 ΓåÆ 14 (expected 14)
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:254:13)
+
+  console.log
+      Oversell attempt (qty=139) ΓåÆ HTTP 400: Insufficient stock / αªàαª¬αª░αºìαª»αª╛αª¬αºìαªñ αª╕αºìαªƒαªò
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:281:13)
+
+  console.log
+      Sale count before: 5, after: 5 ΓåÆ ROLLBACK CONFIRMED
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:296:13)
+
+  console.log
+      Stock after blocked sale: 39 (unchanged, no partial write)
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:308:13)
+
+  console.log
+      GET /sales/275a23d7-e5f3-4a5b-83e6-16094b119ecc ΓåÆ items: 2, payments: 1
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:325:13)
+
+  console.log
+      Void response: HTTP 200 ΓÇö Sale voided
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:333:13)
+
+  console.log
+      Stock after void: 42 (expected 42)
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:348:13)
+
+  console.log
+      BOOK-SCH-001 movement-derived balance=42.0000, product_stocks=42.0000
+
+      at Object.<anonymous> (sale-integration.integration.spec.ts:417:13)
+
+PASS test/sale-integration.integration.spec.ts (5.644 s)
+  Integration: Sale ΓåÆ Journal ΓåÆ Stock
+    ΓêÜ Step 0 ΓÇö capture stock levels before sale (71 ms)
+    ΓêÜ Step 1 ΓÇö POST /sales creates sale with correct totals (65 ms)
+    ΓêÜ Step 2 ΓÇö journal_entries: every entry has total_debit == total_credit (7 ms)
+    ΓêÜ Step 3 ΓÇö journal lines: SUM(debit amounts) == SUM(credit amounts) per entry (4 ms)
+    ΓêÜ Step 4 ΓÇö SALE journal entry: Cash Dr == Sales Revenue Cr == 860.00 (2 ms)
+    ΓêÜ Step 5 ΓÇö stock_movements: SALE movements recorded for both products (4 ms)
+    ΓêÜ Step 6 ΓÇö product_stocks: balance decreased by sold quantity (4 ms)
+    ΓêÜ Step 7 ΓÇö negative stock blocked: selling more than available ΓåÆ HTTP 400 (18 ms)
+    ΓêÜ Step 8 ΓÇö stock unchanged after rejected sale (no partial write) (2 ms)
+    ΓêÜ Step 9 ΓÇö GET /sales/:id returns complete sale with items and payments (12 ms)
+    ΓêÜ Step 10 ΓÇö void sale reverses stock movements (SALES_RETURN) (42 ms)
+  Integration: Accounting equation invariants
+    ΓêÜ All posted journal entries in DB are balanced (Dr == Cr) (2 ms)
+    ΓêÜ All journal_lines are fully reconciled (line Dr == line Cr per entry) (8 ms)
+    ΓêÜ Stock movements balance: SUM(inward) - SUM(outward) == current product_stock (5 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        5.965 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

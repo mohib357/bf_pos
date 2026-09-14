@@ -1,0 +1,19 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": ".",
+  "testRegex": ".*\\.integration\\.spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": ["ts-jest", {
+      "tsconfig": {
+        "paths": {},
+        "baseUrl": "."
+      }
+    }]
+  },
+  "testEnvironment": "node",
+  "testTimeout": 30000,
+  "forceExit": true,
+  "verbose": true,
+  "runInBand": true,
+  "maxWorkers": 1
+}
