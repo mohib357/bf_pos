@@ -1,0 +1,24 @@
+{
+  "name": "bf-pos",
+  "version": "1.0.0",
+  "description": "Barakah Finance — Library & Stationery Business Management System",
+  "private": true,
+  "workspaces": [
+    "apps/frontend",
+    "apps/backend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "dev:backend": "npm run start:dev --workspace=apps/backend",
+    "build:frontend": "npm run build --workspace=apps/frontend",
+    "build:backend": "npm run build --workspace=apps/backend",
+    "lint": "npm run lint --workspaces",
+    "db:migrate": "npm run db:migrate --workspace=apps/backend",
+    "db:seed": "npm run db:seed --workspace=apps/backend",
+    "db:studio": "npm run db:studio --workspace=apps/backend"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
