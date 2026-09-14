@@ -1,14 +1,16 @@
 /**
  * Product Import / Export Controller
- * POST /products/import/preview   — Upload file, validate, return preview
- * POST /products/import/execute   — Execute a previously previewed import
- * GET  /products/import/:id       — Import job status
- * GET  /products/import/template  — Download import template
- * GET  /products/export           — Export products to Excel/CSV
+ *
+ * Routes (all under /products-data to avoid conflict with /products/:id):
+ *   GET  /products-data/export            — Export products to Excel/CSV
+ *   GET  /products-data/import/template   — Download import template
+ *   POST /products-data/import/preview    — Upload file, validate, return preview
+ *   POST /products-data/import/execute    — Execute a previously previewed import
+ *   GET  /products-data/import/:id        — Import job status
  */
 import {
   Controller, Get, Post, Param, Query, Res,
-  UseInterceptors, UploadedFile, ParseUUIDPipe, Body,
+  UseInterceptors, UploadedFile, ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
@@ -17,14 +19,38 @@ import { ProductsExportService } from './products-export.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { ApiResponse } from '../../common/dto/api-response.dto';
-import { ConfirmImportDto } from './dto/import.dto';
 
-@Controller('products')
+@Controller('products-data')
 export class ProductsImportController {
   constructor(
     private readonly importService: ProductsImportService,
     private readonly exportService: ProductsExportService,
   ) {}
+
+  // ── Export ────────────────────────────────────────────────────────────────
+
+  @Get('export')
+  @RequirePermissions('products:read:products')
+  async exportProducts(
+    @Res() res: Response,
+    @Query('format') format: 'xlsx' | 'csv' = 'xlsx',
+    @Query('categoryId') categoryId?: string,
+    @Query('brandId') brandId?: string,
+    @Query('status') status?: string,
+    @Query('includeStock') includeStock?: string,
+  ) {
+    const result = await this.exportService.exportProducts({
+      format,
+      categoryId,
+      brandId,
+      status,
+      includeStock: includeStock !== 'false',
+    });
+
+    res.setHeader('Content-Type', result.mimetype);
+    res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+    res.send(result.buffer);
+  }
 
   // ── Import Template ───────────────────────────────────────────────────────
 
@@ -80,7 +106,7 @@ export class ProductsImportController {
       return ApiResponse.error('No file uploaded / ফাইল আপলোড করা হয়নি');
     }
     if (!importId) {
-      return ApiResponse.error('importId is required. Call /import/preview first.');
+      return ApiResponse.error('importId is required. Call import/preview first.');
     }
 
     const result = await this.importService.executeImport(
@@ -105,30 +131,5 @@ export class ProductsImportController {
   async getImportJob(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.importService.getImportJob(id);
     return ApiResponse.success(data);
-  }
-
-  // ── Export ────────────────────────────────────────────────────────────────
-
-  @Get('export')
-  @RequirePermissions('products:read:products')
-  async exportProducts(
-    @Res() res: Response,
-    @Query('format') format: 'xlsx' | 'csv' = 'xlsx',
-    @Query('categoryId') categoryId?: string,
-    @Query('brandId') brandId?: string,
-    @Query('status') status?: string,
-    @Query('includeStock') includeStock?: string,
-  ) {
-    const result = await this.exportService.exportProducts({
-      format,
-      categoryId,
-      brandId,
-      status,
-      includeStock: includeStock !== 'false',
-    });
-
-    res.setHeader('Content-Type', result.mimetype);
-    res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
-    res.send(result.buffer);
   }
 }
