@@ -14,6 +14,10 @@ import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ProductsModule } from './modules/products/products.module';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { BrandsModule } from './modules/brands/brands.module';
+import { UnitsModule } from './modules/units/units.module';
+import { BarcodesModule } from './modules/barcodes/barcodes.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
@@ -67,6 +71,10 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     RolesModule,
     AdminModule,
     ProductsModule,
+    CategoriesModule,
+    BrandsModule,
+    UnitsModule,
+    BarcodesModule,
     SalesModule,
     PurchasesModule,
     SuppliersModule,

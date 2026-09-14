@@ -419,9 +419,11 @@ model Product {
   descriptionBn    String?       @map("description_bn")
   costPrice        Decimal       @default(0) @db.Decimal(15, 4) @map("cost_price")
   sellingPrice     Decimal       @default(0) @db.Decimal(15, 4) @map("selling_price")
+  wholesalePrice   Decimal?      @db.Decimal(15, 4) @map("wholesale_price")
   mrp              Decimal?      @db.Decimal(15, 4)
   taxRate          Decimal       @default(0) @db.Decimal(5, 2) @map("tax_rate")
   discountRate     Decimal       @default(0) @db.Decimal(5, 2) @map("discount_rate")
+  minimumStock     Decimal       @default(0) @db.Decimal(15, 4) @map("minimum_stock")
   reorderLevel     Decimal       @default(0) @db.Decimal(15, 4) @map("reorder_level")
   reorderQty       Decimal       @default(0) @db.Decimal(15, 4) @map("reorder_qty")
   hasVariants      Boolean       @default(false) @map("has_variants")
@@ -435,22 +437,61 @@ model Product {
   updatedAt        DateTime      @updatedAt @map("updated_at")
   deletedAt        DateTime?     @map("deleted_at")
   createdBy        String?       @map("created_by")
+  updatedBy        String?       @map("updated_by")
 
-  category      Category?        @relation(fields: [categoryId], references: [id])
-  brand         Brand?           @relation(fields: [brandId], references: [id])
-  unit          Unit?            @relation(fields: [unitId], references: [id])
+  category      Category?         @relation(fields: [categoryId], references: [id])
+  brand         Brand?            @relation(fields: [brandId], references: [id])
+  unit          Unit?             @relation(fields: [unitId], references: [id])
   variants      ProductVariant[]
   barcodes      Barcode[]
   purchaseItems PurchaseItem[]
   saleItems     SaleItem[]
   stockMovements StockMovement[]
   productStocks ProductStock[]
+  priceHistory  ProductPriceHistory[]
 
   @@index([sku])
   @@index([barcode])
   @@index([categoryId])
   @@index([status])
   @@map("products")
+}
+
+// Price history — never mutated, append-only
+model ProductPriceHistory {
+  id             String   @id @default(uuid())
+  productId      String   @map("product_id")
+  costPrice      Decimal  @db.Decimal(15, 4) @map("cost_price")
+  sellingPrice   Decimal  @db.Decimal(15, 4) @map("selling_price")
+  wholesalePrice Decimal? @db.Decimal(15, 4) @map("wholesale_price")
+  mrp            Decimal? @db.Decimal(15, 4)
+  changedBy      String?  @map("changed_by")
+  reason         String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([createdAt])
+  @@map("product_price_history")
+}
+
+// Bulk import job tracking
+model ProductImport {
+  id           String   @id @default(uuid())
+  filename     String
+  totalRows    Int      @default(0) @map("total_rows")
+  validRows    Int      @default(0) @map("valid_rows")
+  errorRows    Int      @default(0) @map("error_rows")
+  importedRows Int      @default(0) @map("imported_rows")
+  status       String   @default("PENDING") // PENDING, PROCESSING, DONE, FAILED
+  errors       Json?    // Array of { row, field, message }
+  preview      Json?    // Sample rows for confirmation
+  createdBy    String?  @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  completedAt  DateTime? @map("completed_at")
+
+  @@map("product_imports")
 }
 
 model ProductVariant {

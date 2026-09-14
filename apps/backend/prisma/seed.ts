@@ -1,14 +1,15 @@
 /**
- * Barakah Finance POS — Database Seed
+ * Barakah Finance POS — Database Seed v2
  * Seeds: roles, permissions, admin user, accounts chart, branches,
- *        warehouse, categories, units, sample products, numbering sequences, settings
+ *        warehouse, categories (hierarchical), brands, units,
+ *        sample products with barcodes, numbering sequences, settings
  */
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-// ─── PERMISSIONS ────────────────────────────────────────────────────
+// ─── PERMISSIONS ─────────────────────────────────────────────────────────────
 const PERMISSIONS = [
   // Users
   { module: 'users', action: 'create', resource: 'users' },
@@ -77,32 +78,18 @@ const PERMISSIONS = [
   { module: 'cash', action: 'read', resource: 'register' },
 ];
 
-// ─── ROLES ────────────────────────────────────────────────────────────
+// ─── ROLES ────────────────────────────────────────────────────────────────────
 const ROLES = [
+  { name: 'SUPER_ADMIN', nameBn: 'সুপার অ্যাডমিন', description: 'Full system access', isSystem: true, allPermissions: true },
+  { name: 'OWNER',       nameBn: 'মালিক',           description: 'Business owner — full access', isSystem: true, allPermissions: true },
   {
-    name: 'SUPER_ADMIN',
-    nameBn: 'সুপার অ্যাডমিন',
-    description: 'Full system access',
-    isSystem: true,
-    allPermissions: true,
-  },
-  {
-    name: 'OWNER',
-    nameBn: 'মালিক',
-    description: 'Business owner — full access',
-    isSystem: true,
-    allPermissions: true,
-  },
-  {
-    name: 'MANAGER',
-    nameBn: 'ম্যানেজার',
-    description: 'Branch manager',
-    isSystem: true,
+    name: 'MANAGER', nameBn: 'ম্যানেজার', description: 'Branch manager', isSystem: true,
     permissions: [
-      'users:read:users', 'products:create:products', 'products:read:products',
-      'products:update:products', 'categories:create:categories', 'categories:read:categories',
-      'categories:update:categories', 'sales:create:sales', 'sales:read:sales',
-      'sales:void:sales', 'purchases:create:purchases', 'purchases:read:purchases',
+      'users:read:users',
+      'products:create:products', 'products:read:products', 'products:update:products',
+      'categories:create:categories', 'categories:read:categories', 'categories:update:categories',
+      'sales:create:sales', 'sales:read:sales', 'sales:void:sales',
+      'purchases:create:purchases', 'purchases:read:purchases',
       'suppliers:create:suppliers', 'suppliers:read:suppliers', 'suppliers:update:suppliers',
       'customers:create:customers', 'customers:read:customers', 'customers:update:customers',
       'inventory:read:inventory', 'inventory:adjust:inventory',
@@ -114,10 +101,7 @@ const ROLES = [
     ],
   },
   {
-    name: 'CASHIER',
-    nameBn: 'ক্যাশিয়ার',
-    description: 'POS cashier',
-    isSystem: true,
+    name: 'CASHIER', nameBn: 'ক্যাশিয়ার', description: 'POS cashier', isSystem: true,
     permissions: [
       'products:read:products', 'sales:create:sales', 'sales:read:sales',
       'customers:create:customers', 'customers:read:customers',
@@ -125,207 +109,341 @@ const ROLES = [
     ],
   },
   {
-    name: 'INVENTORY_STAFF',
-    nameBn: 'ইনভেন্টরি স্টাফ',
-    description: 'Manages stock',
-    isSystem: true,
+    name: 'INVENTORY_STAFF', nameBn: 'ইনভেন্টরি স্টাফ', description: 'Manages stock', isSystem: true,
     permissions: [
       'products:read:products', 'products:create:products', 'products:update:products',
       'purchases:create:purchases', 'purchases:read:purchases',
       'inventory:read:inventory', 'inventory:adjust:inventory', 'inventory:transfer:inventory',
       'suppliers:read:suppliers', 'suppliers:create:suppliers',
+      'categories:read:categories',
     ],
   },
   {
-    name: 'ACCOUNTANT',
-    nameBn: 'হিসাবরক্ষক',
-    description: 'Financial operations',
-    isSystem: true,
+    name: 'ACCOUNTANT', nameBn: 'হিসাবরক্ষক', description: 'Financial operations', isSystem: true,
     permissions: [
       'accounting:read:accounting', 'accounting:create:journal', 'accounting:void:journal',
       'expenses:create:expenses', 'expenses:read:expenses', 'expenses:approve:expenses',
-      'reports:read:financial_report', 'reports:read:sales_report',
-      'reports:read:purchase_report', 'investments:read:investments',
-      'sales:read:sales', 'purchases:read:purchases',
+      'reports:read:financial_report', 'reports:read:sales_report', 'reports:read:purchase_report',
+      'investments:read:investments', 'sales:read:sales', 'purchases:read:purchases',
     ],
   },
   {
-    name: 'VIEWER',
-    nameBn: 'ভিউয়ার',
-    description: 'Read-only access',
-    isSystem: true,
+    name: 'VIEWER', nameBn: 'ভিউয়ার', description: 'Read-only access', isSystem: true,
     permissions: [
       'products:read:products', 'sales:read:sales', 'purchases:read:purchases',
-      'suppliers:read:suppliers', 'customers:read:customers', 'inventory:read:inventory',
+      'suppliers:read:suppliers', 'customers:read:customers',
+      'inventory:read:inventory', 'categories:read:categories',
       'reports:read:sales_report', 'reports:read:inventory_report',
     ],
   },
 ];
 
-// ─── CHART OF ACCOUNTS ────────────────────────────────────────────────
+// ─── CHART OF ACCOUNTS ───────────────────────────────────────────────────────
 const ACCOUNTS = [
-  // Assets
-  { code: '1000', name: 'Cash', nameBn: 'নগদ', type: 'ASSET', subType: 'CASH', isSystem: true },
-  { code: '1010', name: 'Cash in Hand', nameBn: 'হাতে নগদ', type: 'ASSET', subType: 'CASH', isSystem: false },
-  { code: '1020', name: 'Bank Account', nameBn: 'ব্যাংক একাউন্ট', type: 'ASSET', subType: 'BANK', isSystem: false },
-  { code: '1030', name: 'Mobile Banking', nameBn: 'মোবাইল ব্যাংকিং', type: 'ASSET', subType: 'BANK', isSystem: false },
-  { code: '1100', name: 'Accounts Receivable', nameBn: 'প্রাপ্য হিসাব', type: 'ASSET', subType: 'ACCOUNTS_RECEIVABLE', isSystem: true },
-  { code: '1200', name: 'Inventory', nameBn: 'মালামাল', type: 'ASSET', subType: 'INVENTORY', isSystem: true },
-  { code: '1300', name: 'Prepaid Expenses', nameBn: 'অগ্রিম খরচ', type: 'ASSET', subType: 'OTHER_ASSET', isSystem: false },
-  { code: '1500', name: 'Fixed Assets', nameBn: 'স্থায়ী সম্পদ', type: 'ASSET', subType: 'FIXED_ASSET', isSystem: false },
-  // Liabilities
-  { code: '2000', name: 'Accounts Payable', nameBn: 'প্রদেয় হিসাব', type: 'LIABILITY', subType: 'ACCOUNTS_PAYABLE', isSystem: true },
-  { code: '2100', name: 'Short-term Loans', nameBn: 'স্বল্পমেয়াদী ঋণ', type: 'LIABILITY', subType: 'SHORT_TERM_LIABILITY', isSystem: false },
-  { code: '2200', name: 'Tax Payable', nameBn: 'প্রদেয় কর', type: 'LIABILITY', subType: 'SHORT_TERM_LIABILITY', isSystem: false },
-  { code: '2500', name: 'Long-term Loans', nameBn: 'দীর্ঘমেয়াদী ঋণ', type: 'LIABILITY', subType: 'LONG_TERM_LIABILITY', isSystem: false },
-  // Equity
-  { code: '3000', name: "Owner's Capital", nameBn: 'মালিকের মূলধন', type: 'EQUITY', subType: 'OWNERS_EQUITY', isSystem: true },
-  { code: '3100', name: 'Investment Capital', nameBn: 'বিনিয়োগ মূলধন', type: 'EQUITY', subType: 'OWNERS_EQUITY', isSystem: false },
-  { code: '3200', name: 'Retained Earnings', nameBn: 'সংরক্ষিত আয়', type: 'EQUITY', subType: 'RETAINED_EARNINGS', isSystem: false },
-  // Revenue
-  { code: '4000', name: 'Sales Revenue', nameBn: 'বিক্রয় আয়', type: 'REVENUE', subType: 'SALES_REVENUE', isSystem: true },
-  { code: '4100', name: 'Book Sales', nameBn: 'বই বিক্রয়', type: 'REVENUE', subType: 'SALES_REVENUE', isSystem: false },
-  { code: '4200', name: 'Stationery Sales', nameBn: 'স্টেশনারি বিক্রয়', type: 'REVENUE', subType: 'SALES_REVENUE', isSystem: false },
-  { code: '4900', name: 'Other Income', nameBn: 'অন্যান্য আয়', type: 'REVENUE', subType: 'OTHER_REVENUE', isSystem: false },
-  // Expenses
-  { code: '5000', name: 'Cost of Goods Sold', nameBn: 'পণ্যের মূল্য', type: 'EXPENSE', subType: 'COST_OF_GOODS_SOLD', isSystem: true },
-  { code: '5100', name: 'Rent Expense', nameBn: 'ভাড়া খরচ', type: 'EXPENSE', subType: 'OPERATING_EXPENSE', isSystem: false },
-  { code: '5200', name: 'Salary Expense', nameBn: 'বেতন খরচ', type: 'EXPENSE', subType: 'OPERATING_EXPENSE', isSystem: false },
-  { code: '5300', name: 'Utility Expense', nameBn: 'ইউটিলিটি খরচ', type: 'EXPENSE', subType: 'OPERATING_EXPENSE', isSystem: false },
-  { code: '5400', name: 'Transport Expense', nameBn: 'পরিবহন খরচ', type: 'EXPENSE', subType: 'OPERATING_EXPENSE', isSystem: false },
-  { code: '5500', name: 'Marketing Expense', nameBn: 'বিপণন খরচ', type: 'EXPENSE', subType: 'OPERATING_EXPENSE', isSystem: false },
-  { code: '5900', name: 'Other Expenses', nameBn: 'অন্যান্য খরচ', type: 'EXPENSE', subType: 'OTHER_EXPENSE', isSystem: false },
+  { code: '1000', name: 'Cash',               nameBn: 'নগদ',              type: 'ASSET',   subType: 'CASH',               isSystem: true  },
+  { code: '1010', name: 'Cash in Hand',        nameBn: 'হাতে নগদ',         type: 'ASSET',   subType: 'CASH',               isSystem: false },
+  { code: '1020', name: 'Bank Account',        nameBn: 'ব্যাংক একাউন্ট',   type: 'ASSET',   subType: 'BANK',               isSystem: false },
+  { code: '1030', name: 'Mobile Banking',      nameBn: 'মোবাইল ব্যাংকিং', type: 'ASSET',   subType: 'BANK',               isSystem: false },
+  { code: '1100', name: 'Accounts Receivable', nameBn: 'প্রাপ্য হিসাব',    type: 'ASSET',   subType: 'ACCOUNTS_RECEIVABLE', isSystem: true  },
+  { code: '1200', name: 'Inventory',           nameBn: 'মালামাল',           type: 'ASSET',   subType: 'INVENTORY',          isSystem: true  },
+  { code: '1300', name: 'Prepaid Expenses',    nameBn: 'অগ্রিম খরচ',       type: 'ASSET',   subType: 'OTHER_ASSET',        isSystem: false },
+  { code: '1500', name: 'Fixed Assets',        nameBn: 'স্থায়ী সম্পদ',     type: 'ASSET',   subType: 'FIXED_ASSET',        isSystem: false },
+  { code: '2000', name: 'Accounts Payable',    nameBn: 'প্রদেয় হিসাব',    type: 'LIABILITY', subType: 'ACCOUNTS_PAYABLE', isSystem: true  },
+  { code: '2100', name: 'Short-term Loans',    nameBn: 'স্বল্পমেয়াদী ঋণ', type: 'LIABILITY', subType: 'SHORT_TERM_LIABILITY', isSystem: false },
+  { code: '2200', name: 'Tax Payable',         nameBn: 'প্রদেয় কর',        type: 'LIABILITY', subType: 'SHORT_TERM_LIABILITY', isSystem: false },
+  { code: '2500', name: 'Long-term Loans',     nameBn: 'দীর্ঘমেয়াদী ঋণ',  type: 'LIABILITY', subType: 'LONG_TERM_LIABILITY', isSystem: false },
+  { code: '3000', name: "Owner's Capital",     nameBn: 'মালিকের মূলধন',    type: 'EQUITY',  subType: 'OWNERS_EQUITY',      isSystem: true  },
+  { code: '3100', name: 'Investment Capital',  nameBn: 'বিনিয়োগ মূলধন',   type: 'EQUITY',  subType: 'OWNERS_EQUITY',      isSystem: false },
+  { code: '3200', name: 'Retained Earnings',   nameBn: 'সংরক্ষিত আয়',     type: 'EQUITY',  subType: 'RETAINED_EARNINGS',  isSystem: false },
+  { code: '4000', name: 'Sales Revenue',       nameBn: 'বিক্রয় আয়',       type: 'REVENUE', subType: 'SALES_REVENUE',      isSystem: true  },
+  { code: '4100', name: 'Book Sales',          nameBn: 'বই বিক্রয়',        type: 'REVENUE', subType: 'SALES_REVENUE',      isSystem: false },
+  { code: '4200', name: 'Stationery Sales',    nameBn: 'স্টেশনারি বিক্রয়', type: 'REVENUE', subType: 'SALES_REVENUE',      isSystem: false },
+  { code: '4900', name: 'Other Income',        nameBn: 'অন্যান্য আয়',      type: 'REVENUE', subType: 'OTHER_REVENUE',      isSystem: false },
+  { code: '5000', name: 'Cost of Goods Sold',  nameBn: 'পণ্যের মূল্য',      type: 'EXPENSE', subType: 'COST_OF_GOODS_SOLD', isSystem: true  },
+  { code: '5100', name: 'Rent Expense',        nameBn: 'ভাড়া খরচ',         type: 'EXPENSE', subType: 'OPERATING_EXPENSE',  isSystem: false },
+  { code: '5200', name: 'Salary Expense',      nameBn: 'বেতন খরচ',          type: 'EXPENSE', subType: 'OPERATING_EXPENSE',  isSystem: false },
+  { code: '5300', name: 'Utility Expense',     nameBn: 'ইউটিলিটি খরচ',     type: 'EXPENSE', subType: 'OPERATING_EXPENSE',  isSystem: false },
+  { code: '5400', name: 'Transport Expense',   nameBn: 'পরিবহন খরচ',        type: 'EXPENSE', subType: 'OPERATING_EXPENSE',  isSystem: false },
+  { code: '5500', name: 'Marketing Expense',   nameBn: 'বিপণন খরচ',         type: 'EXPENSE', subType: 'OPERATING_EXPENSE',  isSystem: false },
+  { code: '5900', name: 'Other Expenses',      nameBn: 'অন্যান্য খরচ',      type: 'EXPENSE', subType: 'OTHER_EXPENSE',      isSystem: false },
 ];
 
-// ─── CATEGORIES ───────────────────────────────────────────────────────
-const CATEGORIES = [
-  { code: 'SCHOOL-BOOKS', name: 'School Books', nameBn: 'স্কুলের বই' },
-  { code: 'MADRASA-BOOKS', name: 'Madrasa Books', nameBn: 'মাদ্রাসার বই' },
-  { code: 'ISLAMIC-BOOKS', name: 'Islamic Books', nameBn: 'ইসলামিক বই' },
-  { code: 'QURAN-HADITH', name: 'Quran & Hadith', nameBn: 'কুরআন ও হাদিস' },
-  { code: 'STATIONERY', name: 'Stationery', nameBn: 'স্টেশনারি' },
-  { code: 'NOTEBOOKS', name: 'Notebooks', nameBn: 'নোটবুক' },
-  { code: 'PENS-PENCILS', name: 'Pens & Pencils', nameBn: 'কলম ও পেন্সিল' },
-  { code: 'FILES-FOLDERS', name: 'Files & Folders', nameBn: 'ফাইল ও ফোল্ডার' },
-  { code: 'EDU-ACCESSORIES', name: 'Educational Accessories', nameBn: 'শিক্ষামূলক আনুষাঙ্গিক' },
-  { code: 'OFFICE-SUPPLIES', name: 'Office Supplies', nameBn: 'অফিস সামগ্রী' },
-  { code: 'OTHER', name: 'Other Products', nameBn: 'অন্যান্য পণ্য' },
+// ─── CATEGORIES (with subcategories) ─────────────────────────────────────────
+// parentCode = null → root; parentCode = 'xxx' → child of xxx
+const CATEGORIES: Array<{
+  code: string; name: string; nameBn: string;
+  parentCode?: string; sortOrder?: number;
+}> = [
+  // ── Root categories ──
+  { code: 'BOOKS',          name: 'Books',                  nameBn: 'বই',                     sortOrder: 1 },
+  { code: 'STATIONERY',     name: 'Stationery',             nameBn: 'স্টেশনারি',               sortOrder: 2 },
+  { code: 'EDU-ACCESSORIES',name: 'Educational Accessories',nameBn: 'শিক্ষামূলক আনুষাঙ্গিক', sortOrder: 3 },
+  { code: 'OFFICE-SUPPLIES',name: 'Office Supplies',        nameBn: 'অফিস সামগ্রী',            sortOrder: 4 },
+  { code: 'OTHER',          name: 'Other Products',         nameBn: 'অন্যান্য পণ্য',           sortOrder: 5 },
+
+  // ── Books subcategories ──
+  { code: 'SCHOOL-BOOKS',   name: 'School Books',    nameBn: 'স্কুলের বই',      parentCode: 'BOOKS', sortOrder: 1 },
+  { code: 'MADRASA-BOOKS',  name: 'Madrasa Books',   nameBn: 'মাদ্রাসার বই',    parentCode: 'BOOKS', sortOrder: 2 },
+  { code: 'ISLAMIC-BOOKS',  name: 'Islamic Books',   nameBn: 'ইসলামিক বই',      parentCode: 'BOOKS', sortOrder: 3 },
+  { code: 'QURAN-HADITH',   name: 'Quran & Hadith',  nameBn: 'কুরআন ও হাদিস',   parentCode: 'BOOKS', sortOrder: 4 },
+  { code: 'ARABIC-BOOKS',   name: 'Arabic Books',    nameBn: 'আরবি বই',          parentCode: 'BOOKS', sortOrder: 5 },
+
+  // ── Stationery subcategories ──
+  { code: 'PENS-PENCILS',   name: 'Pens & Pencils',  nameBn: 'কলম ও পেন্সিল',  parentCode: 'STATIONERY', sortOrder: 1 },
+  { code: 'NOTEBOOKS',      name: 'Notebooks',        nameBn: 'নোটবুক',          parentCode: 'STATIONERY', sortOrder: 2 },
+  { code: 'PAPER',          name: 'Paper & A4',       nameBn: 'কাগজ ও A4',        parentCode: 'STATIONERY', sortOrder: 3 },
+  { code: 'FILES-FOLDERS',  name: 'Files & Folders',  nameBn: 'ফাইল ও ফোল্ডার', parentCode: 'STATIONERY', sortOrder: 4 },
+  { code: 'DRAWING',        name: 'Drawing Supplies', nameBn: 'ড্রইং সামগ্রী',   parentCode: 'STATIONERY', sortOrder: 5 },
 ];
 
-// ─── UNITS ────────────────────────────────────────────────────────────
+// ─── BRANDS ──────────────────────────────────────────────────────────────────
+const BRANDS = [
+  { name: 'Scholar',     nameBn: 'স্কলার',     description: 'Stationery brand' },
+  { name: 'Navana',      nameBn: 'নভানা',      description: 'Pen & stationery manufacturer' },
+  { name: 'Reynolds',    nameBn: 'রেনল্ডস',    description: 'International pen brand' },
+  { name: 'Camlin',      nameBn: 'ক্যামলিন',    description: 'Art & stationery supplies' },
+  { name: 'Papyrus',     nameBn: 'প্যাপিরাস',   description: 'Notebook & paper products' },
+  { name: 'Laal Neel',   nameBn: 'লাল নীল',     description: 'Bengali book publisher' },
+  { name: 'Maktaba',     nameBn: 'মাকতাবা',     description: 'Islamic book publisher' },
+  { name: 'NCTB',        nameBn: 'এনসিটিবি',    description: 'National Curriculum & Textbook Board' },
+  { name: 'Ananda',      nameBn: 'আনন্দ',       description: 'Book publisher' },
+  { name: 'Generic',     nameBn: 'জেনেরিক',     description: 'Unbranded / generic products' },
+];
+
+// ─── UNITS ───────────────────────────────────────────────────────────────────
 const UNITS = [
-  { name: 'Piece', nameBn: 'পিস', abbreviation: 'pc', abbrevBn: 'পি' },
-  { name: 'Dozen', nameBn: 'ডজন', abbreviation: 'dz', abbrevBn: 'ড' },
-  { name: 'Box', nameBn: 'বাক্স', abbreviation: 'box', abbrevBn: 'বা' },
-  { name: 'Pack', nameBn: 'প্যাক', abbreviation: 'pk', abbrevBn: 'প' },
-  { name: 'Ream', nameBn: 'রিম', abbreviation: 'rm', abbrevBn: 'রি' },
-  { name: 'Set', nameBn: 'সেট', abbreviation: 'set', abbrevBn: 'সে' },
-  { name: 'Copy', nameBn: 'কপি', abbreviation: 'copy', abbrevBn: 'কপ' },
-  { name: 'Bundle', nameBn: 'বান্ডেল', abbreviation: 'bndl', abbrevBn: 'বান' },
+  { name: 'Piece',   nameBn: 'পিস',     abbreviation: 'pc',    abbrevBn: 'পি'  },
+  { name: 'Dozen',   nameBn: 'ডজন',     abbreviation: 'dz',    abbrevBn: 'ড'   },
+  { name: 'Box',     nameBn: 'বাক্স',   abbreviation: 'box',   abbrevBn: 'বা'  },
+  { name: 'Pack',    nameBn: 'প্যাক',   abbreviation: 'pk',    abbrevBn: 'প'   },
+  { name: 'Ream',    nameBn: 'রিম',     abbreviation: 'rm',    abbrevBn: 'রি'  },
+  { name: 'Set',     nameBn: 'সেট',     abbreviation: 'set',   abbrevBn: 'সে'  },
+  { name: 'Copy',    nameBn: 'কপি',     abbreviation: 'copy',  abbrevBn: 'কপ'  },
+  { name: 'Bundle',  nameBn: 'বান্ডেল', abbreviation: 'bndl',  abbrevBn: 'বান' },
+  { name: 'Kilogram',nameBn: 'কিলোগ্রাম',abbreviation: 'kg',  abbrevBn: 'কি'  },
+  { name: 'Gram',    nameBn: 'গ্রাম',   abbreviation: 'g',     abbrevBn: 'গ্'  },
+  { name: 'Liter',   nameBn: 'লিটার',   abbreviation: 'L',     abbrevBn: 'লি'  },
+  { name: 'Meter',   nameBn: 'মিটার',   abbreviation: 'm',     abbrevBn: 'মি'  },
 ];
 
-// ─── NUMBERING SEQUENCES ──────────────────────────────────────────────
+// ─── NUMBERING SEQUENCES ──────────────────────────────────────────────────────
 const SEQUENCES = [
-  { module: 'sale', prefix: 'INV', separator: '-', padding: 6, currentNo: 0 },
-  { module: 'purchase', prefix: 'PO', separator: '-', padding: 6, currentNo: 0 },
-  { module: 'customer_payment', prefix: 'REC', separator: '-', padding: 6, currentNo: 0 },
-  { module: 'supplier_payment', prefix: 'PAY', separator: '-', padding: 6, currentNo: 0 },
-  { module: 'expense', prefix: 'EXP', separator: '-', padding: 6, currentNo: 0 },
-  { module: 'income', prefix: 'INC', separator: '-', padding: 6, currentNo: 0 },
-  { module: 'journal_entry', prefix: 'JE', separator: '-', padding: 6, currentNo: 0 },
-  { module: 'stock_adjustment', prefix: 'ADJ', separator: '-', padding: 6, currentNo: 0 },
-  { module: 'stock_count', prefix: 'SC', separator: '-', padding: 6, currentNo: 0 },
+  { module: 'sale',              prefix: 'INV', separator: '-', padding: 6, currentNo: 0 },
+  { module: 'purchase',          prefix: 'PO',  separator: '-', padding: 6, currentNo: 0 },
+  { module: 'customer_payment',  prefix: 'REC', separator: '-', padding: 6, currentNo: 0 },
+  { module: 'supplier_payment',  prefix: 'PAY', separator: '-', padding: 6, currentNo: 0 },
+  { module: 'expense',           prefix: 'EXP', separator: '-', padding: 6, currentNo: 0 },
+  { module: 'income',            prefix: 'INC', separator: '-', padding: 6, currentNo: 0 },
+  { module: 'journal_entry',     prefix: 'JE',  separator: '-', padding: 6, currentNo: 0 },
+  { module: 'stock_adjustment',  prefix: 'ADJ', separator: '-', padding: 6, currentNo: 0 },
+  { module: 'stock_count',       prefix: 'SC',  separator: '-', padding: 6, currentNo: 0 },
 ];
 
-// ─── SETTINGS ─────────────────────────────────────────────────────────
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
 const SETTINGS = [
-  { key: 'business_name', value: 'Barakah Finance — Library & Stationery', type: 'STRING', group: 'business', isPublic: true },
+  { key: 'business_name',    value: 'Barakah Finance — Library & Stationery', type: 'STRING',  group: 'business', isPublic: true  },
   { key: 'business_name_bn', value: 'বারাকাহ ফাইন্যান্স — লাইব্রেরি ও স্টেশনারি', type: 'STRING', group: 'business', isPublic: true },
-  { key: 'business_address', value: 'Dhaka, Bangladesh', type: 'STRING', group: 'business', isPublic: true },
-  { key: 'business_phone', value: '01700000000', type: 'STRING', group: 'business', isPublic: true },
-  { key: 'currency', value: 'BDT', type: 'STRING', group: 'business', isPublic: true },
-  { key: 'currency_symbol', value: '৳', type: 'STRING', group: 'business', isPublic: true },
-  { key: 'tax_rate', value: '0', type: 'NUMBER', group: 'tax', isPublic: true },
-  { key: 'low_stock_alert', value: 'true', type: 'BOOLEAN', group: 'inventory', isPublic: false },
-  { key: 'default_language', value: 'bn', type: 'STRING', group: 'app', isPublic: true },
-  { key: 'invoice_footer', value: 'ধন্যবাদ আমাদের সাথে কেনাকাটা করার জন্য', type: 'STRING', group: 'invoice', isPublic: true },
-  { key: 'invoice_footer_en', value: 'Thank you for shopping with us', type: 'STRING', group: 'invoice', isPublic: true },
-  { key: 'pos_print_receipt', value: 'true', type: 'BOOLEAN', group: 'pos', isPublic: false },
-  { key: 'allow_negative_stock', value: 'false', type: 'BOOLEAN', group: 'inventory', isPublic: false, description: 'Allow stock to go below zero' },
+  { key: 'business_address', value: 'Dhaka, Bangladesh',  type: 'STRING',  group: 'business', isPublic: true  },
+  { key: 'business_phone',   value: '01700000000',         type: 'STRING',  group: 'business', isPublic: true  },
+  { key: 'currency',         value: 'BDT',                 type: 'STRING',  group: 'business', isPublic: true  },
+  { key: 'currency_symbol',  value: '৳',                   type: 'STRING',  group: 'business', isPublic: true  },
+  { key: 'tax_rate',         value: '0',                   type: 'NUMBER',  group: 'tax',      isPublic: true  },
+  { key: 'low_stock_alert',  value: 'true',                type: 'BOOLEAN', group: 'inventory',isPublic: false },
+  { key: 'default_language', value: 'bn',                  type: 'STRING',  group: 'app',      isPublic: true  },
+  { key: 'invoice_footer',   value: 'ধন্যবাদ আমাদের সাথে কেনাকাটা করার জন্য', type: 'STRING', group: 'invoice', isPublic: true },
+  { key: 'invoice_footer_en',value: 'Thank you for shopping with us', type: 'STRING', group: 'invoice', isPublic: true },
+  { key: 'pos_print_receipt',value: 'true',                type: 'BOOLEAN', group: 'pos',      isPublic: false },
+  { key: 'allow_negative_stock', value: 'false',           type: 'BOOLEAN', group: 'inventory',isPublic: false },
 ];
 
-// ─── SAMPLE PRODUCTS ──────────────────────────────────────────────────
-async function seedSampleProducts(prisma: PrismaClient, categoryMap: any, unitMap: any) {
-  const products = [
-    { sku: 'BOOK-SCH-001', name: 'Class 5 Mathematics', nameBn: 'পঞ্চম শ্রেণি গণিত', category: 'SCHOOL-BOOKS', unit: 'pc', costPrice: 80, sellingPrice: 100 },
-    { sku: 'BOOK-SCH-002', name: 'Class 6 English Grammar', nameBn: 'ষষ্ঠ শ্রেণি ইংরেজি ব্যাকরণ', category: 'SCHOOL-BOOKS', unit: 'pc', costPrice: 90, sellingPrice: 120 },
-    { sku: 'BOOK-ISL-001', name: 'Al Quran (Large)', nameBn: 'আল কুরআন (বড়)', category: 'QURAN-HADITH', unit: 'pc', costPrice: 200, sellingPrice: 280 },
-    { sku: 'BOOK-ISL-002', name: 'Riyazus Salihin', nameBn: 'রিয়াযুস সালেহীন', category: 'ISLAMIC-BOOKS', unit: 'pc', costPrice: 150, sellingPrice: 200 },
-    { sku: 'BOOK-MAD-001', name: 'Ilm ul Sarf', nameBn: 'ইলমুস সরফ', category: 'MADRASA-BOOKS', unit: 'pc', costPrice: 60, sellingPrice: 85 },
-    { sku: 'STA-PEN-001', name: 'Ball Pen Blue', nameBn: 'বল পেন নীল', category: 'PENS-PENCILS', unit: 'dz', costPrice: 60, sellingPrice: 80 },
-    { sku: 'STA-PEN-002', name: 'Pencil HB', nameBn: 'পেন্সিল HB', category: 'PENS-PENCILS', unit: 'dz', costPrice: 40, sellingPrice: 55 },
-    { sku: 'STA-NB-001', name: 'Notebook A4 200 pages', nameBn: 'নোটবুক A4 ২০০ পৃষ্ঠা', category: 'NOTEBOOKS', unit: 'pc', costPrice: 55, sellingPrice: 75 },
-    { sku: 'STA-NB-002', name: 'Exercise Book 100 pages', nameBn: 'খাতা ১০০ পৃষ্ঠা', category: 'NOTEBOOKS', unit: 'pc', costPrice: 30, sellingPrice: 45 },
-    { sku: 'STA-FILE-001', name: 'Plastic File Cover', nameBn: 'প্লাস্টিক ফাইল কভার', category: 'FILES-FOLDERS', unit: 'pc', costPrice: 15, sellingPrice: 25 },
-    { sku: 'STA-RULER-001', name: 'Ruler 30cm', nameBn: 'স্কেল ৩০ সেমি', category: 'EDU-ACCESSORIES', unit: 'pc', costPrice: 10, sellingPrice: 18 },
-    { sku: 'OFFICE-TAPE-001', name: 'Cello Tape', nameBn: 'সেলো টেপ', category: 'OFFICE-SUPPLIES', unit: 'pc', costPrice: 18, sellingPrice: 28 },
-  ];
+// ─── EAN-13 helper ────────────────────────────────────────────────────────────
+function ean13(seq: number): string {
+  const base = `200${String(seq).padStart(9, '0')}`;
+  const arr = base.split('').map(Number);
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += i % 2 === 0 ? arr[i] : arr[i] * 3;
+  return base + String((10 - (sum % 10)) % 10);
+}
 
-  for (const p of products) {
-    const categoryId = categoryMap[p.category];
+// ─── SAMPLE PRODUCTS ──────────────────────────────────────────────────────────
+interface SeedProduct {
+  sku: string;
+  name: string;
+  nameBn: string;
+  categoryCode: string;
+  unit: string;
+  brandName?: string;
+  costPrice: number;
+  sellingPrice: number;
+  wholesalePrice?: number;
+  mrp?: number;
+  minimumStock?: number;
+  reorderLevel?: number;
+  reorderQty?: number;
+  description?: string;
+}
+
+const SAMPLE_PRODUCTS: SeedProduct[] = [
+  // ── School Books ──
+  { sku: 'BOOK-SCH-001', name: 'Class 5 Mathematics',       nameBn: 'পঞ্চম শ্রেণি গণিত',         categoryCode: 'SCHOOL-BOOKS',  unit: 'pc',  brandName: 'NCTB',    costPrice: 80,  sellingPrice: 100, mrp: 110, minimumStock: 5, reorderLevel: 10, reorderQty: 50 },
+  { sku: 'BOOK-SCH-002', name: 'Class 6 English Grammar',    nameBn: 'ষষ্ঠ শ্রেণি ইংরেজি ব্যাকরণ',categoryCode: 'SCHOOL-BOOKS',  unit: 'pc',  brandName: 'NCTB',    costPrice: 90,  sellingPrice: 120, mrp: 130, minimumStock: 5, reorderLevel: 10, reorderQty: 50 },
+  { sku: 'BOOK-SCH-003', name: 'Class 8 Science',            nameBn: 'অষ্টম শ্রেণি বিজ্ঞান',      categoryCode: 'SCHOOL-BOOKS',  unit: 'pc',  brandName: 'NCTB',    costPrice: 85,  sellingPrice: 110, mrp: 120, minimumStock: 5, reorderLevel: 10, reorderQty: 40 },
+  { sku: 'BOOK-SCH-004', name: 'SSC Mathematics',            nameBn: 'এসএসসি গণিত',                categoryCode: 'SCHOOL-BOOKS',  unit: 'pc',  brandName: 'Ananda',  costPrice: 120, sellingPrice: 160, wholesalePrice: 140, mrp: 175, minimumStock: 5, reorderLevel: 8, reorderQty: 30 },
+
+  // ── Madrasa Books ──
+  { sku: 'BOOK-MAD-001', name: 'Ilm ul Sarf',               nameBn: 'ইলমুস সরফ',                  categoryCode: 'MADRASA-BOOKS', unit: 'pc',  brandName: 'Maktaba', costPrice: 60,  sellingPrice: 85,  mrp: 90,  minimumStock: 3, reorderLevel: 8, reorderQty: 30 },
+  { sku: 'BOOK-MAD-002', name: 'Nahw Mir',                   nameBn: 'নাহু মীর',                   categoryCode: 'MADRASA-BOOKS', unit: 'pc',  brandName: 'Maktaba', costPrice: 55,  sellingPrice: 75,  mrp: 80,  minimumStock: 3, reorderLevel: 8, reorderQty: 30 },
+  { sku: 'BOOK-MAD-003', name: 'Mizan ul Sarf',              nameBn: 'মীযানুস সরফ',                categoryCode: 'MADRASA-BOOKS', unit: 'pc',  brandName: 'Maktaba', costPrice: 50,  sellingPrice: 70,  mrp: 75,  minimumStock: 3, reorderLevel: 8, reorderQty: 25 },
+
+  // ── Islamic Books ──
+  { sku: 'BOOK-ISL-001', name: 'Riyazus Salihin',            nameBn: 'রিয়াযুস সালেহীন',           categoryCode: 'ISLAMIC-BOOKS', unit: 'pc',  brandName: 'Maktaba', costPrice: 150, sellingPrice: 200, wholesalePrice: 180, mrp: 220, minimumStock: 3, reorderLevel: 6, reorderQty: 20 },
+  { sku: 'BOOK-ISL-002', name: 'Fazail e Amaal (Bangla)',    nameBn: 'ফাজায়েলে আমাল (বাংলা)',      categoryCode: 'ISLAMIC-BOOKS', unit: 'pc',  brandName: 'Maktaba', costPrice: 180, sellingPrice: 240, wholesalePrice: 210, mrp: 260, minimumStock: 3, reorderLevel: 6, reorderQty: 20 },
+
+  // ── Quran & Hadith ──
+  { sku: 'BOOK-QH-001',  name: 'Al Quran (Large, Tajweed)', nameBn: 'আল কুরআন (বড়, তাজউইদ)',    categoryCode: 'QURAN-HADITH',  unit: 'pc',  brandName: 'Maktaba', costPrice: 200, sellingPrice: 280, wholesalePrice: 250, mrp: 300, minimumStock: 3, reorderLevel: 5, reorderQty: 15 },
+  { sku: 'BOOK-QH-002',  name: 'Al Quran (Pocket Size)',    nameBn: 'আল কুরআন (পকেট সাইজ)',      categoryCode: 'QURAN-HADITH',  unit: 'pc',  brandName: 'Maktaba', costPrice: 90,  sellingPrice: 130, wholesalePrice: 115, mrp: 145, minimumStock: 5, reorderLevel: 8, reorderQty: 25 },
+  { sku: 'BOOK-QH-003',  name: 'Bukhari Sharif (Full Set)', nameBn: 'বুখারী শরীফ (পূর্ণ সেট)',   categoryCode: 'QURAN-HADITH',  unit: 'set', brandName: 'Maktaba', costPrice: 800, sellingPrice: 1100, wholesalePrice: 950, mrp: 1200, minimumStock: 1, reorderLevel: 2, reorderQty: 5 },
+
+  // ── Arabic Books ──
+  { sku: 'BOOK-ARB-001', name: 'Arabic Grammar (Beginners)',nameBn: 'আরবি ব্যাকরণ (প্রাথমিক)',   categoryCode: 'ARABIC-BOOKS',  unit: 'pc',  brandName: 'Maktaba', costPrice: 70,  sellingPrice: 95,  mrp: 100, minimumStock: 3, reorderLevel: 6, reorderQty: 20 },
+
+  // ── Pens & Pencils ──
+  { sku: 'STA-PEN-001',  name: 'Ball Pen Blue (Dozen)',     nameBn: 'বল পেন নীল (ডজন)',           categoryCode: 'PENS-PENCILS',  unit: 'dz',  brandName: 'Reynolds', costPrice: 60,  sellingPrice: 80,  wholesalePrice: 72, mrp: 90,  minimumStock: 10, reorderLevel: 20, reorderQty: 100 },
+  { sku: 'STA-PEN-002',  name: 'Ball Pen Black (Dozen)',    nameBn: 'বল পেন কালো (ডজন)',           categoryCode: 'PENS-PENCILS',  unit: 'dz',  brandName: 'Reynolds', costPrice: 60,  sellingPrice: 80,  wholesalePrice: 72, mrp: 90,  minimumStock: 10, reorderLevel: 20, reorderQty: 100 },
+  { sku: 'STA-PEN-003',  name: 'Gel Pen Blue',              nameBn: 'জেল পেন নীল',                 categoryCode: 'PENS-PENCILS',  unit: 'pc',  brandName: 'Navana',   costPrice: 10,  sellingPrice: 15,  mrp: 18,  minimumStock: 20, reorderLevel: 50, reorderQty: 200 },
+  { sku: 'STA-PCL-001',  name: 'Pencil HB (Dozen)',         nameBn: 'পেন্সিল HB (ডজন)',            categoryCode: 'PENS-PENCILS',  unit: 'dz',  brandName: 'Camlin',   costPrice: 40,  sellingPrice: 55,  wholesalePrice: 50, mrp: 60,  minimumStock: 10, reorderLevel: 20, reorderQty: 100 },
+  { sku: 'STA-PCL-002',  name: 'Colour Pencil Set 12',      nameBn: 'রঙিন পেন্সিল সেট ১২',        categoryCode: 'PENS-PENCILS',  unit: 'set', brandName: 'Camlin',   costPrice: 55,  sellingPrice: 80,  mrp: 90,  minimumStock: 5,  reorderLevel: 10, reorderQty: 50  },
+  { sku: 'STA-MKR-001',  name: 'Whiteboard Marker Black',   nameBn: 'হোয়াইটবোর্ড মার্কার কালো', categoryCode: 'PENS-PENCILS',  unit: 'pc',  brandName: 'Scholar',  costPrice: 20,  sellingPrice: 30,  mrp: 35,  minimumStock: 10, reorderLevel: 20, reorderQty: 80  },
+
+  // ── Notebooks ──
+  { sku: 'STA-NB-001',   name: 'Notebook A4 200 pages',     nameBn: 'নোটবুক A4 ২০০ পৃষ্ঠা',       categoryCode: 'NOTEBOOKS',     unit: 'pc',  brandName: 'Papyrus',  costPrice: 55,  sellingPrice: 75,  wholesalePrice: 68, mrp: 80,  minimumStock: 10, reorderLevel: 20, reorderQty: 80  },
+  { sku: 'STA-NB-002',   name: 'Exercise Book 100 pages',   nameBn: 'খাতা ১০০ পৃষ্ঠা',             categoryCode: 'NOTEBOOKS',     unit: 'pc',  brandName: 'Papyrus',  costPrice: 30,  sellingPrice: 45,  wholesalePrice: 40, mrp: 50,  minimumStock: 20, reorderLevel: 40, reorderQty: 150 },
+  { sku: 'STA-NB-003',   name: 'Spiral Notebook A5',        nameBn: 'স্পাইরাল নোটবুক A5',          categoryCode: 'NOTEBOOKS',     unit: 'pc',  brandName: 'Papyrus',  costPrice: 45,  sellingPrice: 65,  mrp: 70,  minimumStock: 10, reorderLevel: 20, reorderQty: 80  },
+  { sku: 'STA-NB-004',   name: 'Drawing Book A4',           nameBn: 'ড্রইং বই A4',                 categoryCode: 'DRAWING',       unit: 'pc',  brandName: 'Camlin',   costPrice: 40,  sellingPrice: 60,  mrp: 65,  minimumStock: 5,  reorderLevel: 10, reorderQty: 40  },
+
+  // ── Paper ──
+  { sku: 'STA-PAP-001',  name: 'A4 Paper 80GSM (Ream)',     nameBn: 'A4 কাগজ ৮০জিএসএম (রিম)',     categoryCode: 'PAPER',         unit: 'rm',  brandName: 'Generic',  costPrice: 350, sellingPrice: 450, wholesalePrice: 410, mrp: 480, minimumStock: 5,  reorderLevel: 10, reorderQty: 30  },
+  { sku: 'STA-PAP-002',  name: 'A4 Paper 70GSM (Ream)',     nameBn: 'A4 কাগজ ৭০জিএসএম (রিম)',     categoryCode: 'PAPER',         unit: 'rm',  brandName: 'Generic',  costPrice: 300, sellingPrice: 390, wholesalePrice: 360, mrp: 420, minimumStock: 5,  reorderLevel: 10, reorderQty: 30  },
+
+  // ── Files & Folders ──
+  { sku: 'STA-FILE-001', name: 'Plastic File Cover',        nameBn: 'প্লাস্টিক ফাইল কভার',        categoryCode: 'FILES-FOLDERS', unit: 'pc',  brandName: 'Scholar',  costPrice: 15,  sellingPrice: 25,  mrp: 30,  minimumStock: 20, reorderLevel: 40, reorderQty: 200 },
+  { sku: 'STA-FILE-002', name: 'Box File A4',               nameBn: 'বক্স ফাইল A4',                categoryCode: 'FILES-FOLDERS', unit: 'pc',  brandName: 'Scholar',  costPrice: 80,  sellingPrice: 120, mrp: 130, minimumStock: 5,  reorderLevel: 10, reorderQty: 40  },
+  { sku: 'STA-FILE-003', name: 'Ring Binder A4',            nameBn: 'রিং বাইন্ডার A4',              categoryCode: 'FILES-FOLDERS', unit: 'pc',  brandName: 'Scholar',  costPrice: 120, sellingPrice: 170, mrp: 185, minimumStock: 5,  reorderLevel: 8,  reorderQty: 30  },
+
+  // ── Educational Accessories ──
+  { sku: 'EDU-RULER-001',name: 'Ruler 30cm',                nameBn: 'স্কেল ৩০ সেমি',               categoryCode: 'EDU-ACCESSORIES',unit: 'pc', brandName: 'Camlin',   costPrice: 10,  sellingPrice: 18,  mrp: 20,  minimumStock: 20, reorderLevel: 40, reorderQty: 200 },
+  { sku: 'EDU-COMP-001', name: 'Compass Set',               nameBn: 'কম্পাস সেট',                   categoryCode: 'EDU-ACCESSORIES',unit: 'set',brandName: 'Camlin',   costPrice: 40,  sellingPrice: 65,  mrp: 70,  minimumStock: 5,  reorderLevel: 10, reorderQty: 40  },
+  { sku: 'EDU-CALC-001', name: 'Scientific Calculator',     nameBn: 'সায়েন্টিফিক ক্যালকুলেটর',   categoryCode: 'EDU-ACCESSORIES',unit: 'pc', brandName: 'Generic',  costPrice: 180, sellingPrice: 250, wholesalePrice: 225, mrp: 270, minimumStock: 3,  reorderLevel: 5,  reorderQty: 20  },
+
+  // ── Office Supplies ──
+  { sku: 'OFF-TAPE-001', name: 'Cello Tape 1 inch',         nameBn: 'সেলো টেপ ১ ইঞ্চি',           categoryCode: 'OFFICE-SUPPLIES',unit: 'pc', brandName: 'Scholar',  costPrice: 18,  sellingPrice: 28,  mrp: 32,  minimumStock: 20, reorderLevel: 40, reorderQty: 150 },
+  { sku: 'OFF-STPL-001', name: 'Stapler (Heavy Duty)',       nameBn: 'স্টেপলার (হেভি ডিউটি)',      categoryCode: 'OFFICE-SUPPLIES',unit: 'pc', brandName: 'Scholar',  costPrice: 120, sellingPrice: 175, mrp: 190, minimumStock: 3,  reorderLevel: 5,  reorderQty: 20  },
+  { sku: 'OFF-SCSR-001', name: 'Scissors 8 inch',           nameBn: 'কাঁচি ৮ ইঞ্চি',               categoryCode: 'OFFICE-SUPPLIES',unit: 'pc', brandName: 'Generic',  costPrice: 35,  sellingPrice: 55,  mrp: 60,  minimumStock: 5,  reorderLevel: 10, reorderQty: 40  },
+];
+
+// ─── Seed sample products ─────────────────────────────────────────────────────
+async function seedProducts(
+  categoryMap: Record<string, string>,
+  unitMap: Record<string, string>,
+  brandMap: Record<string, string>,
+) {
+  let barcodeSeq = 1;
+
+  for (const p of SAMPLE_PRODUCTS) {
+    const categoryId = categoryMap[p.categoryCode];
     const unitId = unitMap[p.unit];
-    if (!categoryId) continue;
+    const brandId = p.brandName ? brandMap[p.brandName.toLowerCase()] : undefined;
 
-    await prisma.product.upsert({
-      where: { sku: p.sku },
-      update: {},
-      create: {
+    if (!categoryId) {
+      console.warn(`  ⚠ Category not found: ${p.categoryCode} (skipping ${p.sku})`);
+      continue;
+    }
+
+    // Generate deterministic barcode from sequence
+    const barcode = ean13(barcodeSeq++);
+
+    const existing = await prisma.product.findUnique({ where: { sku: p.sku } });
+    if (existing) {
+      // Update prices in case they changed — but never touch historical records
+      await prisma.product.update({
+        where: { sku: p.sku },
+        data: {
+          costPrice: p.costPrice,
+          sellingPrice: p.sellingPrice,
+          wholesalePrice: p.wholesalePrice,
+          mrp: p.mrp,
+          minimumStock: p.minimumStock ?? 0,
+          reorderLevel: p.reorderLevel ?? 5,
+          reorderQty: p.reorderQty ?? 20,
+          brandId: brandId || null,
+          unitId: unitId || null,
+        },
+      });
+      continue;
+    }
+
+    await prisma.product.create({
+      data: {
         sku: p.sku,
+        barcode,
         name: p.name,
         nameBn: p.nameBn,
+        description: p.description,
         categoryId,
-        unitId,
+        unitId: unitId || null,
+        brandId: brandId || null,
         costPrice: p.costPrice,
         sellingPrice: p.sellingPrice,
-        reorderLevel: 5,
-        reorderQty: 20,
+        wholesalePrice: p.wholesalePrice,
+        mrp: p.mrp,
+        minimumStock: p.minimumStock ?? 0,
+        reorderLevel: p.reorderLevel ?? 5,
+        reorderQty: p.reorderQty ?? 20,
         status: 'ACTIVE',
       },
     });
+
+    // Seed initial price history
+    const created = await prisma.product.findUnique({ where: { sku: p.sku } });
+    if (created) {
+      const exists = await prisma.productPriceHistory.findFirst({ where: { productId: created.id } });
+      if (!exists) {
+        await prisma.productPriceHistory.create({
+          data: {
+            productId: created.id,
+            costPrice: p.costPrice,
+            sellingPrice: p.sellingPrice,
+            wholesalePrice: p.wholesalePrice,
+            mrp: p.mrp,
+            reason: 'Initial price (seed)',
+          },
+        });
+      }
+    }
   }
 }
 
-// ─── MAIN SEED ────────────────────────────────────────────────────────
+// ─── MAIN ─────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log('🌱 Starting database seed...');
+  console.log('🌱 Starting database seed v2...');
 
   // 1. Permissions
-  console.log('  → Creating permissions...');
+  console.log('  → Permissions...');
   await prisma.permission.createMany({ data: PERMISSIONS, skipDuplicates: true });
-  const allPermissions = await prisma.permission.findMany();
-  const permMap = Object.fromEntries(
-    allPermissions.map((p) => [`${p.module}:${p.action}:${p.resource}`, p.id]),
-  );
+  const allPerms = await prisma.permission.findMany();
+  const permMap = Object.fromEntries(allPerms.map((p) => [`${p.module}:${p.action}:${p.resource}`, p.id]));
 
   // 2. Roles
-  console.log('  → Creating roles...');
+  console.log('  → Roles...');
   for (const roleData of ROLES) {
     const role = await prisma.role.upsert({
       where: { name: roleData.name },
       update: {},
-      create: {
-        name: roleData.name,
-        nameBn: roleData.nameBn,
-        description: roleData.description,
-        isSystem: roleData.isSystem,
-      },
+      create: { name: roleData.name, nameBn: roleData.nameBn, description: roleData.description, isSystem: roleData.isSystem },
     });
-
-    // Assign permissions
-    const permIds = roleData.allPermissions
+    const permIds = (roleData as any).allPermissions
       ? Object.values(permMap)
-      : (roleData.permissions || []).map((p) => permMap[p]).filter(Boolean);
-
+      : ((roleData as any).permissions || []).map((p: string) => permMap[p]).filter(Boolean);
     for (const permissionId of permIds) {
       await prisma.rolePermission.upsert({
         where: { roleId_permissionId: { roleId: role.id, permissionId } },
@@ -335,62 +453,38 @@ async function main() {
     }
   }
 
-  // 3. Main Branch
-  console.log('  → Creating branch & warehouse...');
+  // 3. Main Branch & Warehouse
+  console.log('  → Branch & Warehouse...');
   const branch = await prisma.branch.upsert({
     where: { code: 'MAIN' },
     update: {},
-    create: {
-      code: 'MAIN',
-      name: 'Main Branch',
-      nameBn: 'প্রধান শাখা',
-      address: 'Dhaka, Bangladesh',
-      phone: '01700000000',
-      isMain: true,
-      status: 'ACTIVE',
-    },
+    create: { code: 'MAIN', name: 'Main Branch', nameBn: 'প্রধান শাখা', address: 'Dhaka, Bangladesh', phone: '01700000000', isMain: true, status: 'ACTIVE' },
   });
-
-  const warehouse = await prisma.warehouse.upsert({
+  await prisma.warehouse.upsert({
     where: { code: 'WH-MAIN' },
     update: {},
-    create: {
-      branchId: branch.id,
-      code: 'WH-MAIN',
-      name: 'Main Warehouse',
-      nameBn: 'প্রধান গুদাম',
-      isDefault: true,
-      isActive: true,
-    },
+    create: { branchId: branch.id, code: 'WH-MAIN', name: 'Main Warehouse', nameBn: 'প্রধান গুদাম', isDefault: true, isActive: true },
   });
 
   // 4. Super Admin User
-  console.log('  → Creating super admin user...');
+  console.log('  → Super Admin user...');
   const adminUsername = process.env.SEED_ADMIN_USERNAME || 'admin';
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@barakahfinance.com';
+  const adminEmail    = process.env.SEED_ADMIN_EMAIL    || 'admin@barakahfinance.com';
   const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'Admin@123456';
-  const adminPhone = process.env.SEED_ADMIN_PHONE || '01700000000';
-
-  const passwordHash = await bcrypt.hash(adminPassword, 12);
+  const adminPhone    = process.env.SEED_ADMIN_PHONE    || '01700000000';
+  const passwordHash  = await bcrypt.hash(adminPassword, 12);
   const superAdminRole = await prisma.role.findUnique({ where: { name: 'SUPER_ADMIN' } });
 
   const adminUser = await prisma.user.upsert({
     where: { username: adminUsername },
     update: {},
     create: {
-      username: adminUsername,
-      email: adminEmail,
-      phone: adminPhone,
-      passwordHash,
-      firstName: 'Super',
-      lastName: 'Admin',
-      firstNameBn: 'সুপার',
-      lastNameBn: 'অ্যাডমিন',
-      status: 'ACTIVE',
-      branchId: branch.id,
+      username: adminUsername, email: adminEmail, phone: adminPhone,
+      passwordHash, firstName: 'Super', lastName: 'Admin',
+      firstNameBn: 'সুপার', lastNameBn: 'অ্যাডমিন',
+      status: 'ACTIVE', branchId: branch.id,
     },
   });
-
   if (superAdminRole) {
     await prisma.userRole.upsert({
       where: { userId_roleId_branchId: { userId: adminUser.id, roleId: superAdminRole.id, branchId: branch.id } },
@@ -400,29 +494,51 @@ async function main() {
   }
 
   // 5. Chart of Accounts
-  console.log('  → Creating chart of accounts...');
+  console.log('  → Chart of Accounts...');
   for (const acc of ACCOUNTS) {
-    await prisma.account.upsert({
-      where: { code: acc.code },
-      update: {},
-      create: acc as any,
-    });
+    await prisma.account.upsert({ where: { code: acc.code }, update: {}, create: acc as any });
   }
 
-  // 6. Categories
-  console.log('  → Creating categories...');
+  // 6. Categories (hierarchical — roots first, then children)
+  console.log('  → Categories (hierarchical)...');
   const categoryMap: Record<string, string> = {};
-  for (const cat of CATEGORIES) {
+
+  // Pass 1: root categories (no parentCode)
+  for (const cat of CATEGORIES.filter((c) => !c.parentCode)) {
     const c = await prisma.category.upsert({
       where: { code: cat.code },
-      update: {},
-      create: { code: cat.code, name: cat.name, nameBn: cat.nameBn, isActive: true },
+      update: { name: cat.name, nameBn: cat.nameBn, sortOrder: cat.sortOrder ?? 0 },
+      create: { code: cat.code, name: cat.name, nameBn: cat.nameBn, sortOrder: cat.sortOrder ?? 0, isActive: true },
     });
     categoryMap[cat.code] = c.id;
   }
 
-  // 7. Units
-  console.log('  → Creating units...');
+  // Pass 2: children
+  for (const cat of CATEGORIES.filter((c) => c.parentCode)) {
+    const parentId = categoryMap[cat.parentCode!];
+    if (!parentId) { console.warn(`  ⚠ Parent not found for ${cat.code}`); continue; }
+    const c = await prisma.category.upsert({
+      where: { code: cat.code },
+      update: { name: cat.name, nameBn: cat.nameBn, sortOrder: cat.sortOrder ?? 0, parentId },
+      create: { code: cat.code, name: cat.name, nameBn: cat.nameBn, parentId, sortOrder: cat.sortOrder ?? 0, isActive: true },
+    });
+    categoryMap[cat.code] = c.id;
+  }
+
+  // 7. Brands
+  console.log('  → Brands...');
+  const brandMap: Record<string, string> = {};
+  for (const brand of BRANDS) {
+    const b = await prisma.brand.upsert({
+      where: { name: brand.name },
+      update: {},
+      create: { name: brand.name, nameBn: brand.nameBn, description: brand.description, isActive: true },
+    });
+    brandMap[brand.name.toLowerCase()] = b.id;
+  }
+
+  // 8. Units
+  console.log('  → Units...');
   const unitMap: Record<string, string> = {};
   for (const unit of UNITS) {
     const u = await prisma.unit.upsert({
@@ -433,29 +549,21 @@ async function main() {
     unitMap[unit.abbreviation] = u.id;
   }
 
-  // 8. Numbering Sequences
-  console.log('  → Creating numbering sequences...');
+  // 9. Numbering Sequences
+  console.log('  → Numbering sequences...');
   for (const seq of SEQUENCES) {
-    await prisma.numberingSequence.upsert({
-      where: { module: seq.module },
-      update: {},
-      create: seq,
-    });
+    await prisma.numberingSequence.upsert({ where: { module: seq.module }, update: {}, create: seq });
   }
 
-  // 9. Settings
-  console.log('  → Creating settings...');
-  for (const setting of SETTINGS) {
-    await prisma.setting.upsert({
-      where: { key: setting.key },
-      update: {},
-      create: setting as any,
-    });
+  // 10. Settings
+  console.log('  → Settings...');
+  for (const s of SETTINGS) {
+    await prisma.setting.upsert({ where: { key: s.key }, update: {}, create: s as any });
   }
 
-  // 10. Expense Categories
-  console.log('  → Creating expense categories...');
-  const expenseCategories = [
+  // 11. Expense Categories
+  console.log('  → Expense categories...');
+  const expCats = [
     { name: 'Rent', nameBn: 'ভাড়া' },
     { name: 'Salary & Wages', nameBn: 'বেতন ও মজুরি' },
     { name: 'Electricity', nameBn: 'বিদ্যুৎ বিল' },
@@ -465,57 +573,53 @@ async function main() {
     { name: 'Maintenance', nameBn: 'রক্ষণাবেক্ষণ' },
     { name: 'Other', nameBn: 'অন্যান্য' },
   ];
-  for (const ec of expenseCategories) {
+  for (const ec of expCats) {
     await prisma.expenseCategory.create({ data: ec }).catch(() => {});
   }
 
-  // 11. Sample Products
-  console.log('  → Creating sample products...');
-  await seedSampleProducts(prisma, categoryMap, unitMap);
+  // 12. Sample Products
+  console.log(`  → Sample products (${SAMPLE_PRODUCTS.length} items)...`);
+  await seedProducts(categoryMap, unitMap, brandMap);
 
-  // 12. Sample Demo Data (Supplier & Customer)
-  console.log('  → Creating demo supplier & customer...');
+  // 13. Demo Supplier & Customer
+  console.log('  → Demo supplier & customer...');
   await prisma.supplier.upsert({
     where: { code: 'SUP-00001' },
     update: {},
     create: {
-      code: 'SUP-00001',
-      name: 'Boi Ghar Publishers',
-      nameBn: 'বই ঘর পাবলিশার্স',
-      phone: '01711111111',
-      city: 'Dhaka',
-      creditLimit: 100000,
-      creditDays: 30,
-      currentBalance: 0,
+      code: 'SUP-00001', name: 'Boi Ghar Publishers', nameBn: 'বই ঘর পাবলিশার্স',
+      phone: '01711111111', city: 'Dhaka', creditLimit: 100000, creditDays: 30, currentBalance: 0,
     },
   });
-
+  await prisma.supplier.upsert({
+    where: { code: 'SUP-00002' },
+    update: {},
+    create: {
+      code: 'SUP-00002', name: 'Maktaba Al Islamia', nameBn: 'মাকতাবা আল ইসলামিয়া',
+      phone: '01722222222', city: 'Dhaka', creditLimit: 50000, creditDays: 15, currentBalance: 0,
+    },
+  });
   await prisma.customer.upsert({
     where: { code: 'CUS-00001' },
     update: {},
-    create: {
-      code: 'CUS-00001',
-      name: 'Walk-in Customer',
-      nameBn: 'সাধারণ গ্রাহক',
-      phone: '00000000000',
-      currentBalance: 0,
-    },
+    create: { code: 'CUS-00001', name: 'Walk-in Customer', nameBn: 'সাধারণ গ্রাহক', phone: '00000000000', currentBalance: 0 },
+  });
+  await prisma.customer.upsert({
+    where: { code: 'CUS-00002' },
+    update: {},
+    create: { code: 'CUS-00002', name: 'Madrasa Al Amin', nameBn: 'মাদ্রাসা আল আমিন', phone: '01733333333', city: 'Dhaka', creditLimit: 20000, creditDays: 30, currentBalance: 0 },
   });
 
   console.log(`
-✅ Database seed complete!
-   Admin credentials:
-   Username : ${adminUsername}
-   Password : ${adminPassword}
-   Email    : ${adminEmail}
+✅ Seed v2 complete!
+   Admin   : ${adminUsername} / ${adminPassword}
+   Products: ${SAMPLE_PRODUCTS.length} seeded
+   Brands  : ${BRANDS.length} seeded
+   Cats    : ${CATEGORIES.length} (${CATEGORIES.filter(c => !c.parentCode).length} root + ${CATEGORIES.filter(c => c.parentCode).length} sub)
+   Units   : ${UNITS.length} seeded
   `);
 }
 
 main()
-  .catch((e) => {
-    console.error('❌ Seed failed:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .catch((e) => { console.error('❌ Seed failed:', e); process.exit(1); })
+  .finally(async () => { await prisma.$disconnect(); });
