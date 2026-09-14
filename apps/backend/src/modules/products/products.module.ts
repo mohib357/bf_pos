@@ -10,10 +10,14 @@ import { ProductsImportController } from './products-import.controller';
 
 @Module({
   imports: [
-    // Use memory storage so we can access file.buffer in controllers
     MulterModule.register({ storage: memoryStorage() }),
   ],
-  controllers: [ProductsController, ProductsImportController],
+  // IMPORTANT: ProductsImportController MUST be listed before ProductsController.
+  // NestJS registers routes in controller declaration order.  The import controller
+  // owns all static /products/export and /products/import/* routes.  If it were
+  // listed after ProductsController, NestJS would try to match those paths against
+  // the :id wildcard in ProductsController first and fail with a 400 UUID error.
+  controllers: [ProductsImportController, ProductsController],
   providers: [ProductsService, ProductsImportService, ProductsExportService],
   exports: [ProductsService, ProductsImportService, ProductsExportService],
 })

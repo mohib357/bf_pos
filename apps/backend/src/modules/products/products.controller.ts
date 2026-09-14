@@ -34,6 +34,8 @@ export class ProductsController {
     return ApiResponse.paginated(result.data, result.total, result.page, result.limit);
   }
 
+  // ── Static routes MUST come before :id ────────────────────────────────
+
   @Get('stats')
   @RequirePermissions('products:read:products')
   async getStats() {
@@ -55,6 +57,29 @@ export class ProductsController {
     return ApiResponse.success(data);
   }
 
+  @Get('generate-barcode')
+  @RequirePermissions('products:create:products')
+  async generateBarcode() {
+    const data = await this.productsService.generateBarcode();
+    return ApiResponse.success(data);
+  }
+
+  @Post('generate-sku')
+  @RequirePermissions('products:create:products')
+  async generateSku(@Body() dto: GenerateSkuDto) {
+    const data = await this.productsService.generateSku(dto);
+    return ApiResponse.success(data);
+  }
+
+  @Patch('bulk-status')
+  @RequirePermissions('products:update:products')
+  async bulkUpdateStatus(@Body() dto: BulkStatusUpdateDto, @CurrentUser('id') userId: string) {
+    const data = await this.productsService.bulkUpdateStatus(dto, userId);
+    return ApiResponse.success(data);
+  }
+
+  // ── Parameterized routes — static sub-paths of :id ─────────────────────
+
   @Get('barcode/:barcode')
   @RequirePermissions('products:read:products')
   async findByBarcode(@Param('barcode') barcode: string) {
@@ -68,6 +93,18 @@ export class ProductsController {
     const product = await this.productsService.findBySku(sku);
     return ApiResponse.success(product);
   }
+
+  @Get('validate-barcode/:barcode')
+  @RequirePermissions('products:read:products')
+  async validateBarcode(
+    @Param('barcode') barcode: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    const data = await this.productsService.validateBarcode(barcode, excludeId);
+    return ApiResponse.success(data);
+  }
+
+  // ── :id routes — must be LAST ──────────────────────────────────────────
 
   @Get(':id/history')
   @RequirePermissions('products:read:products')
@@ -90,13 +127,6 @@ export class ProductsController {
     return ApiResponse.success(product);
   }
 
-  @Patch('bulk-status')
-  @RequirePermissions('products:update:products')
-  async bulkUpdateStatus(@Body() dto: BulkStatusUpdateDto, @CurrentUser('id') userId: string) {
-    const data = await this.productsService.bulkUpdateStatus(dto, userId);
-    return ApiResponse.success(data);
-  }
-
   @Patch(':id')
   @RequirePermissions('products:update:products')
   async update(
@@ -114,31 +144,5 @@ export class ProductsController {
   async remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') userId: string) {
     const result = await this.productsService.softDelete(id, userId);
     return ApiResponse.success(result);
-  }
-
-  // ── SKU / Barcode utilities ─────────────────────────────────────────────
-
-  @Post('generate-sku')
-  @RequirePermissions('products:create:products')
-  async generateSku(@Body() dto: GenerateSkuDto) {
-    const data = await this.productsService.generateSku(dto);
-    return ApiResponse.success(data);
-  }
-
-  @Get('generate-barcode')
-  @RequirePermissions('products:create:products')
-  async generateBarcode() {
-    const data = await this.productsService.generateBarcode();
-    return ApiResponse.success(data);
-  }
-
-  @Get('validate-barcode/:barcode')
-  @RequirePermissions('products:read:products')
-  async validateBarcode(
-    @Param('barcode') barcode: string,
-    @Query('excludeId') excludeId?: string,
-  ) {
-    const data = await this.productsService.validateBarcode(barcode, excludeId);
-    return ApiResponse.success(data);
   }
 }

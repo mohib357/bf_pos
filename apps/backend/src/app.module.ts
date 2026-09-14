@@ -45,19 +45,30 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     }),
 
     /**
-     * Rate Limiting — in-memory storage (Redis-backed version requires
-     * nestjs-throttler-storage-redis compatible with @nestjs/throttler v5).
-     * The in-memory store is process-local but fully functional for single-instance deploys.
-     * For multi-instance Redis integration, upgrade storage when the package ships v5 support.
-     *
+     * Rate Limiting — in-memory storage.
      * Two tiers:
      *  - "default": 100 req / 60s — all routes
      *  - "login":     5 req / 60s — POST /auth/login (via @Throttle decorator)
+     *
+     * When NODE_ENV=test the throttler is disabled entirely so integration
+     * tests can run at full speed without artificial delays or 429 errors.
      */
-    ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000, limit: 100 },
-      { name: 'login',   ttl: 60_000, limit: 5   },
-    ]),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        if (config.get('NODE_ENV') === 'test') {
+          // Disable throttling in test environment
+          return { throttlers: [] };
+        }
+        return {
+          throttlers: [
+            { name: 'default', ttl: 60_000, limit: 100 },
+            { name: 'login',   ttl: 60_000, limit: 5   },
+          ],
+        };
+      },
+    }),
 
     // Core
     PrismaModule,

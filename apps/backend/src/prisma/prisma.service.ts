@@ -6,6 +6,14 @@ import {
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
+// Global singleton — prevents EPERM on Windows when watch mode re-imports the module
+// while the previous DLL is still file-locked by the running process.
+// In production/Docker, this is a no-op (only one process ever runs).
+declare global {
+  // eslint-disable-next-line no-var
+  var __prismaClientSingleton: PrismaClient | undefined;
+}
+
 @Injectable()
 export class PrismaService
   extends PrismaClient

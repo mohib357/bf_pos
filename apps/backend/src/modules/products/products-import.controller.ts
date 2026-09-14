@@ -1,12 +1,19 @@
 /**
- * Product Import / Export Controller
+ * Product Import / Export Controller — base: /products
  *
- * Routes (all under /products-data to avoid conflict with /products/:id):
- *   GET  /products-data/export            — Export products to Excel/CSV
- *   GET  /products-data/import/template   — Download import template
- *   POST /products-data/import/preview    — Upload file, validate, return preview
- *   POST /products-data/import/execute    — Execute a previously previewed import
- *   GET  /products-data/import/:id        — Import job status
+ * All routes here are static paths and MUST be registered BEFORE
+ * the parameterised @Get(':id') in ProductsController.
+ *
+ * NestJS resolves routes in declaration order within a module; because
+ * ProductsImportController is listed FIRST in the module's controllers
+ * array, its static routes always win over the :id wildcard.
+ *
+ * Routes:
+ *   GET  /products/export              — Export products (xlsx/csv)
+ *   GET  /products/import/template     — Download import template
+ *   POST /products/import/preview      — Upload, validate, preview
+ *   POST /products/import/execute      — Execute confirmed import
+ *   GET  /products/import/:id          — Import job status
  */
 import {
   Controller, Get, Post, Param, Query, Res,
@@ -20,7 +27,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { ApiResponse } from '../../common/dto/api-response.dto';
 
-@Controller('products-data')
+@Controller('products')
 export class ProductsImportController {
   constructor(
     private readonly importService: ProductsImportService,
@@ -28,6 +35,7 @@ export class ProductsImportController {
   ) {}
 
   // ── Export ────────────────────────────────────────────────────────────────
+  // Declared first so NestJS registers 'export' before ':id'
 
   @Get('export')
   @RequirePermissions('products:read:products')
@@ -46,13 +54,12 @@ export class ProductsImportController {
       status,
       includeStock: includeStock !== 'false',
     });
-
     res.setHeader('Content-Type', result.mimetype);
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
     res.send(result.buffer);
   }
 
-  // ── Import Template ───────────────────────────────────────────────────────
+  // ── Import template ───────────────────────────────────────────────────────
 
   @Get('import/template')
   @RequirePermissions('products:create:products')
@@ -63,7 +70,7 @@ export class ProductsImportController {
     res.send(buffer);
   }
 
-  // ── Upload & Preview ──────────────────────────────────────────────────────
+  // ── Upload & preview ──────────────────────────────────────────────────────
 
   @Post('import/preview')
   @RequirePermissions('products:create:products')
@@ -75,14 +82,9 @@ export class ProductsImportController {
     if (!file) {
       return ApiResponse.error('No file uploaded / ফাইল আপলোড করা হয়নি', 'ফাইল আপলোড করুন');
     }
-
     const result = await this.importService.preview(
-      file.buffer,
-      file.mimetype,
-      file.originalname,
-      userId,
+      file.buffer, file.mimetype, file.originalname, userId,
     );
-
     return ApiResponse.success(
       result,
       `Preview ready: ${result.validRows} valid, ${result.errorRows} errors`,
@@ -90,7 +92,7 @@ export class ProductsImportController {
     );
   }
 
-  // ── Execute Import ────────────────────────────────────────────────────────
+  // ── Execute import ────────────────────────────────────────────────────────
 
   @Post('import/execute')
   @RequirePermissions('products:create:products')
@@ -102,29 +104,18 @@ export class ProductsImportController {
     @Query('updateExisting') updateExisting?: string,
     @CurrentUser('id') userId: string = '',
   ) {
-    if (!file) {
-      return ApiResponse.error('No file uploaded / ফাইল আপলোড করা হয়নি');
-    }
-    if (!importId) {
-      return ApiResponse.error('importId is required. Call import/preview first.');
-    }
+    if (!file) return ApiResponse.error('No file uploaded / ফাইল আপলোড করা হয়নি');
+    if (!importId) return ApiResponse.error('importId is required. Call import/preview first.');
 
     const result = await this.importService.executeImport(
-      importId,
-      file.buffer,
-      file.mimetype,
-      file.originalname,
-      {
-        skipDuplicates: skipDuplicates === 'true',
-        updateExisting: updateExisting === 'true',
-      },
+      importId, file.buffer, file.mimetype, file.originalname,
+      { skipDuplicates: skipDuplicates === 'true', updateExisting: updateExisting === 'true' },
       userId,
     );
-
     return ApiResponse.success(result, result.message, result.message);
   }
 
-  // ── Import Job Status ─────────────────────────────────────────────────────
+  // ── Import job status ─────────────────────────────────────────────────────
 
   @Get('import/:id')
   @RequirePermissions('products:read:products')
