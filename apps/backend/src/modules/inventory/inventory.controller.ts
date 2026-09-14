@@ -11,68 +11,76 @@ import { InventoryService } from './inventory.service';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ApiResponse } from '../../common/dto/api-response.dto';
-import { IsNotEmpty, IsString, IsNumber, IsOptional, Min, IsEnum } from 'class-validator';
+import { IsNotEmpty, IsString, IsNumber, IsOptional, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { StockMovementType } from '@prisma/client';
-import { ApiExcludeController } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PrismaService } from '../../prisma/prisma.service';
 import Decimal from 'decimal.js';
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
 export class ManualAdjustDto {
+  @ApiProperty({ description: 'Product UUID' })
   @IsNotEmpty()
   @IsString()
   productId: string;
 
+  @ApiProperty({ description: 'Warehouse UUID' })
   @IsNotEmpty()
   @IsString()
   warehouseId: string;
 
-  /** Positive = ADJUSTMENT_IN, Negative = ADJUSTMENT_OUT */
+  @ApiProperty({ description: 'Positive = IN, Negative = OUT', example: 10 })
   @IsNotEmpty()
   @Type(() => Number)
   @IsNumber()
   quantity: number;
 
+  @ApiPropertyOptional({ description: 'Unit cost for valuation' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   unitCost?: number;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   notes?: string;
 }
 
 export class StockCountItemDto {
+  @ApiProperty()
   @IsNotEmpty()
   @IsString()
   productId: string;
 
+  @ApiProperty()
   @IsNotEmpty()
   @IsString()
   warehouseId: string;
 
+  @ApiProperty({ description: 'Physical counted quantity', minimum: 0 })
   @IsNotEmpty()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   countedQuantity: number;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   notes?: string;
 }
 
 export class StockCountDto {
+  @ApiProperty({ type: [StockCountItemDto] })
   @IsNotEmpty()
   items: StockCountItemDto[];
 }
 
 // ── Controller ────────────────────────────────────────────────────────────────
 
-@ApiExcludeController()
 @Controller('inventory')
 export class InventoryController {
   constructor(

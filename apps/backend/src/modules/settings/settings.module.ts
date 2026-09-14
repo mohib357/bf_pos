@@ -5,6 +5,38 @@ import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { ApiResponse } from '../../common/dto/api-response.dto';
 import { ApiExcludeController } from '@nestjs/swagger';
+import { IsNotEmpty, IsString, ValidateNested, IsArray } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
+
+// ── Named DTOs (no anonymous types → no Swagger circular-dep risk) ────────────
+
+export class SettingItemDto {
+  @ApiProperty({ example: 'business_name' })
+  @IsNotEmpty()
+  @IsString()
+  key: string;
+
+  @ApiProperty({ example: 'Barakah Finance' })
+  @IsNotEmpty()
+  @IsString()
+  value: string;
+}
+
+export class BulkUpdateSettingsDto {
+  @ApiProperty({ type: [SettingItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SettingItemDto)
+  settings: SettingItemDto[];
+}
+
+export class UpdateSettingDto {
+  @ApiProperty({ example: 'new_value' })
+  @IsNotEmpty()
+  @IsString()
+  value: string;
+}
 
 @Injectable()
 class SettingsService {
@@ -51,14 +83,14 @@ class SettingsController {
 
   @Patch(':key')
   @RequirePermissions('settings:update:settings')
-  async set(@Param('key') key: string, @Body() body: { value: string }) {
+  async set(@Param('key') key: string, @Body() body: UpdateSettingDto) {
     return ApiResponse.success(await this.settingsService.set(key, body.value));
   }
 
   @Post('bulk')
   @RequirePermissions('settings:update:settings')
-  async setMany(@Body() body: { settings: { key: string; value: string }[] }) {
-    return ApiResponse.success(await this.settingsService.setMany(body.settings));
+  async setMany(@Body() dto: BulkUpdateSettingsDto) {
+    return ApiResponse.success(await this.settingsService.setMany(dto.settings));
   }
 }
 

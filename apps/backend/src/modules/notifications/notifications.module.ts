@@ -63,10 +63,12 @@ class NotificationsController {
   @Get()
   async list(
     @CurrentUser('id') userId: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
   ) {
-    const result = await this.svc.getForUser(userId, page, limit);
+    const p = Math.max(1, Number(page) || 1);
+    const l = Math.min(100, Number(limit) || 20);
+    const result = await this.svc.getForUser(userId, p, l);
     return ApiResponse.paginated(result.data, result.total, result.page, result.limit);
   }
 

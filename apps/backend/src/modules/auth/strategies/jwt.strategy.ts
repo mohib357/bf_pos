@@ -45,6 +45,18 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       }
     }
 
+    // ── Password-change sentinel — rejects all tokens issued before pwd change ──
+    const pwdChangedSentinel = await this.cache.get<string>(`pwd_changed:${payload.sub}`);
+    if (pwdChangedSentinel) {
+      const changedAtMs  = parseInt(pwdChangedSentinel, 10);
+      const tokenIssuedMs = (payload.iat ?? 0) * 1000;
+      if (tokenIssuedMs < changedAtMs) {
+        throw new UnauthorizedException(
+          'Password changed — please log in again / পাসওয়ার্ড পরিবর্তন হয়েছে, আবার লগইন করুন',
+        );
+      }
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: {

@@ -71,6 +71,7 @@ export class JwtPayload {
   branchId?: string;
   isSuperAdmin: boolean;
   permissions: string[];
+  pwdChangedAt?: number; // ms timestamp — used to invalidate tokens after password change
   iat?: number;
   exp?: number;
 }

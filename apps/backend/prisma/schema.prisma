@@ -203,7 +203,7 @@ model User {
   lockedUntil   DateTime?  @map("locked_until")
   pwdResetToken  String?    @map("pwd_reset_token")
   pwdResetExpiry DateTime? @map("pwd_reset_expiry")
-  pwdChangedAt   DateTime? @map("pwd_changed_at")  // updated on every password change — used to invalidate JWTs
+  pwdChangedAt   DateTime? @map("pwd_changed_at") @db.Timestamptz  // updated on every password change — used to invalidate JWTs
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
   deletedAt     DateTime?  @map("deleted_at")
