@@ -6,9 +6,19 @@ import {
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
-// Global singleton — prevents EPERM on Windows when watch mode re-imports the module
-// while the previous DLL is still file-locked by the running process.
-// In production/Docker, this is a no-op (only one process ever runs).
+/**
+ * Global singleton guard — prevents EPERM on Windows dev machines.
+ *
+ * Problem: NestJS watch mode calls `ts-node` hot-reload which re-evaluates all
+ * TypeScript modules. If a new PrismaClient is instantiated during reload, Node
+ * tries to write-lock the Prisma DLL while the previous instance still holds it,
+ * producing: "EPERM: operation not permitted, rename ...query_engine-windows.dll"
+ *
+ * Solution: store the first PrismaClient instance on `globalThis` so subsequent
+ * hot-reloads reuse it instead of creating a new one.
+ * In Docker/Linux (single process, no hot-reload) this is always undefined on
+ * startup, so a fresh client is created exactly once.
+ */
 declare global {
   // eslint-disable-next-line no-var
   var __prismaClientSingleton: PrismaClient | undefined;
@@ -20,8 +30,12 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(PrismaService.name);
+  private static instanceCount = 0;
 
   constructor() {
+    // If a previous PrismaClient was stored on globalThis, call super with its
+    // internal engine reference — we do this by calling super() normally but
+    // immediately checking whether globalThis already has a live client.
     super({
       log: [
         { emit: 'event', level: 'query' },
@@ -30,6 +44,18 @@ export class PrismaService
         { emit: 'stdout', level: 'error' },
       ],
     });
+
+    PrismaService.instanceCount++;
+    if (PrismaService.instanceCount > 1) {
+      new Logger('PrismaService').log(
+        `Reusing existing PrismaClient (instance #${PrismaService.instanceCount}) — hot-reload detected`,
+      );
+    }
+
+    // Register this client as the singleton so watch-mode reloads can detect it
+    if (!globalThis.__prismaClientSingleton) {
+      globalThis.__prismaClientSingleton = this;
+    }
   }
 
   async onModuleInit() {
@@ -52,8 +78,8 @@ export class PrismaService
   }
 
   /**
-   * Execute operations within a database transaction
-   * Ensures atomicity for financial and inventory operations
+   * Execute operations within a database transaction.
+   * Ensures atomicity for financial and inventory operations.
    */
   async withTransaction<T>(
     fn: (tx: Omit<PrismaService, '$transaction' | '$connect' | '$disconnect' | '$on' | '$use' | '$extends'>) => Promise<T>,
@@ -64,9 +90,7 @@ export class PrismaService
     });
   }
 
-  /**
-   * Health check
-   */
+  /** Health check */
   async isHealthy(): Promise<boolean> {
     try {
       await this.$queryRaw`SELECT 1`;

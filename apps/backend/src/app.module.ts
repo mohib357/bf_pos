@@ -53,22 +53,14 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
      * When NODE_ENV=test the throttler is disabled entirely so integration
      * tests can run at full speed without artificial delays or 429 errors.
      */
-    ThrottlerModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        if (config.get('NODE_ENV') === 'test') {
-          // Disable throttling in test environment
-          return { throttlers: [] };
-        }
-        return {
-          throttlers: [
+    ThrottlerModule.forRoot(
+      process.env.NODE_ENV === 'test'
+        ? []   // empty throttlers array = disabled
+        : [
             { name: 'default', ttl: 60_000, limit: 100 },
             { name: 'login',   ttl: 60_000, limit: 5   },
           ],
-        };
-      },
-    }),
+    ),
 
     // Core
     PrismaModule,
