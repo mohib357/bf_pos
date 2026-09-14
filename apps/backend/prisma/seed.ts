@@ -251,6 +251,7 @@ const SETTINGS = [
   { key: 'invoice_footer', value: 'ধন্যবাদ আমাদের সাথে কেনাকাটা করার জন্য', type: 'STRING', group: 'invoice', isPublic: true },
   { key: 'invoice_footer_en', value: 'Thank you for shopping with us', type: 'STRING', group: 'invoice', isPublic: true },
   { key: 'pos_print_receipt', value: 'true', type: 'BOOLEAN', group: 'pos', isPublic: false },
+  { key: 'allow_negative_stock', value: 'false', type: 'BOOLEAN', group: 'inventory', isPublic: false, description: 'Allow stock to go below zero' },
 ];
 
 // ─── SAMPLE PRODUCTS ──────────────────────────────────────────────────

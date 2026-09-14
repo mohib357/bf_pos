@@ -22,17 +22,81 @@ export class SalesService {
     private accountingService: AccountingService,
   ) {}
 
+  // ─── STOCK CHECK ─────────────────────────────────────────────────────────────
+  /**
+   * Checks product stock before sale.
+   * Reads the `allow_negative_stock` setting (default: false).
+   * Throws BadRequestException if stock is insufficient and negative stock is not allowed.
+   */
+  private async checkAndReserveStock(
+    tx: any,
+    warehouseId: string,
+    items: Array<{ productId: string; quantity: number | string; name?: string }>,
+  ): Promise<void> {
+    // Read setting — default false (safe)
+    const setting = await tx.setting.findUnique({
+      where: { key: 'allow_negative_stock' },
+    });
+    const allowNegative =
+      setting?.value === 'true' || setting?.value === '1';
+
+    if (allowNegative) return; // feature disabled — skip check
+
+    const errors: string[] = [];
+
+    for (const item of items) {
+      const qty = new Decimal(item.quantity.toString());
+
+      // Lock the row for update to prevent race conditions
+      const stockRows = await tx.$queryRaw`
+        SELECT ps.quantity, p.name, p.name_bn, p.sku
+        FROM product_stocks ps
+        JOIN products p ON p.id = ps.product_id
+        WHERE ps.product_id = ${item.productId}::uuid
+          AND ps.warehouse_id = ${warehouseId}::uuid
+        FOR UPDATE
+      `;
+
+      const stock = Array.isArray(stockRows) ? stockRows[0] : null;
+      const available = stock ? new Decimal(stock.quantity.toString()) : new Decimal(0);
+      const productLabel = stock
+        ? `${stock.name} (${stock.sku})`
+        : `Product ID: ${item.productId}`;
+
+      if (available.lessThan(qty)) {
+        errors.push(
+          `Insufficient stock for "${productLabel}": ` +
+          `available ${available.toFixed(2)}, requested ${qty.toFixed(2)}`,
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new BadRequestException({
+        message: 'Insufficient stock / অপর্যাপ্ত স্টক',
+        messageBn: 'অপর্যাপ্ত স্টক — বিক্রয় সম্পন্ন হয়নি',
+        errors: errors.map((e) => ({ field: 'stock', message: e })),
+      });
+    }
+  }
+
+  // ─── CREATE SALE ─────────────────────────────────────────────────────────────
   async create(dto: CreateSaleDto, createdBy: string) {
     return this.prisma.withTransaction(async (tx) => {
-      // Get default warehouse for branch if not specified
+      // Resolve warehouse
       let warehouseId = dto.warehouseId;
       if (!warehouseId) {
         const warehouse = await (tx as any).warehouse.findFirst({
           where: { branchId: dto.branchId, isDefault: true },
         });
-        if (!warehouse) throw new BadRequestException('No default warehouse found for branch');
+        if (!warehouse) {
+          throw new BadRequestException('No default warehouse found for branch');
+        }
         warehouseId = warehouse.id;
       }
+
+      // ── STOCK CHECK (runs inside transaction — auto-rollback on throw) ──
+      await this.checkAndReserveStock(tx, warehouseId, dto.items);
 
       // Calculate sale totals
       let subtotal = new Decimal(0);
@@ -77,7 +141,6 @@ export class SalesService {
       const afterDiscount = subtotal.minus(discountAmount);
       const totalAmount = afterDiscount;
 
-      // Calculate payments
       let paidAmount = new Decimal(0);
       const paymentsData: any[] = [];
 
@@ -97,10 +160,8 @@ export class SalesService {
         paidAmount.isZero() ? 'PENDING' :
         paidAmount.greaterThanOrEqualTo(totalAmount) ? 'PAID' : 'PARTIAL';
 
-      // Generate invoice number
       const invoiceNumber = await generateSequenceNumber(this.prisma, 'sale');
 
-      // Create sale
       const sale = await (tx as any).sale.create({
         data: {
           branchId: dto.branchId,
@@ -129,7 +190,7 @@ export class SalesService {
         },
       });
 
-      // Record stock movements for each item
+      // Record stock movements
       for (const item of dto.items) {
         await this.inventoryService.recordMovement(
           {
@@ -180,14 +241,19 @@ export class SalesService {
       // Double-entry accounting
       await this.recordSaleJournalEntry(sale, dto, tx, createdBy);
 
-      this.logger.log(`Sale created: ${invoiceNumber} - Total: ${totalAmount.toFixed(2)}`);
+      this.logger.log(`Sale created: ${invoiceNumber} — Total: ${totalAmount.toFixed(2)}`);
 
       return sale;
     });
   }
 
-  private async recordSaleJournalEntry(sale: any, dto: CreateSaleDto, tx: any, createdBy: string) {
-    // Get system accounts
+  // ─── ACCOUNTING ───────────────────────────────────────────────────────────────
+  private async recordSaleJournalEntry(
+    sale: any,
+    dto: CreateSaleDto,
+    tx: any,
+    createdBy: string,
+  ) {
     const cashAccount = await (tx as any).account.findFirst({
       where: { subType: 'CASH', isSystem: true },
     });
@@ -204,7 +270,7 @@ export class SalesService {
       where: { subType: 'INVENTORY', isSystem: true },
     });
 
-    if (!revenueAccount) return; // Accounting not fully set up yet
+    if (!revenueAccount) return;
 
     const totalAmount = new Decimal(sale.totalAmount.toString());
     const paidAmount = new Decimal(sale.paidAmount.toString());
@@ -212,37 +278,34 @@ export class SalesService {
 
     const lines: any[] = [];
 
-    // Cash/Bank Dr (for paid amount)
     if (paidAmount.greaterThan(0) && cashAccount) {
       lines.push({
         debitAccountId: cashAccount.id,
         amount: paidAmount.toFixed(2),
-        description: `Cash received - ${sale.invoiceNumber}`,
+        description: `Cash received — ${sale.invoiceNumber}`,
       });
     }
 
-    // Accounts Receivable Dr (for credit amount)
     if (dueAmount.greaterThan(0) && arAccount) {
       lines.push({
         debitAccountId: arAccount.id,
         amount: dueAmount.toFixed(2),
-        description: `Credit sale - ${sale.invoiceNumber}`,
+        description: `Credit sale — ${sale.invoiceNumber}`,
       });
     }
 
-    // Sales Revenue Cr
     if (lines.length > 0) {
       lines.push({
         creditAccountId: revenueAccount.id,
         amount: totalAmount.toFixed(2),
-        description: `Sales revenue - ${sale.invoiceNumber}`,
+        description: `Sales revenue — ${sale.invoiceNumber}`,
       });
 
       await this.accountingService.createJournalEntry(
         {
           entryDate: new Date(sale.saleDate),
           type: 'SALE',
-          description: `Sale - Invoice ${sale.invoiceNumber}`,
+          description: `Sale — Invoice ${sale.invoiceNumber}`,
           lines,
           saleId: sale.id,
           createdBy,
@@ -264,17 +327,17 @@ export class SalesService {
           {
             entryDate: new Date(sale.saleDate),
             type: 'SALE',
-            description: `COGS - Invoice ${sale.invoiceNumber}`,
+            description: `COGS — Invoice ${sale.invoiceNumber}`,
             lines: [
               {
                 debitAccountId: cogsAccount.id,
                 amount: totalCogs.toFixed(2),
-                description: `Cost of goods sold`,
+                description: 'Cost of goods sold',
               },
               {
                 creditAccountId: inventoryAccount.id,
                 amount: totalCogs.toFixed(2),
-                description: `Inventory decrease`,
+                description: 'Inventory decrease',
               },
             ],
             saleId: sale.id,
@@ -286,6 +349,7 @@ export class SalesService {
     }
   }
 
+  // ─── FIND ALL ─────────────────────────────────────────────────────────────────
   async findAll(params: {
     page?: number;
     limit?: number;
@@ -335,6 +399,7 @@ export class SalesService {
     return buildPaginatedResult(sales, total, params.page || 1, take);
   }
 
+  // ─── FIND ONE ─────────────────────────────────────────────────────────────────
   async findOne(id: string) {
     const sale = await this.prisma.sale.findUnique({
       where: { id },
@@ -355,25 +420,33 @@ export class SalesService {
     return sale;
   }
 
+  // ─── VOID SALE ────────────────────────────────────────────────────────────────
   async voidSale(id: string, reason: string, voidedBy: string) {
     const sale = await this.findOne(id);
     if (sale.isVoided) throw new BadRequestException('Sale already voided');
 
     return this.prisma.withTransaction(async (tx) => {
-      // Reverse inventory
-      for (const item of sale.items) {
-        await this.inventoryService.recordMovement(
-          {
-            productId: item.productId,
-            warehouseId: (item as any).warehouseId || '',
-            type: 'SALES_RETURN',
-            quantity: item.quantity.toString(),
-            saleId: id,
-            notes: `Void: ${reason}`,
-            createdBy: voidedBy,
-          },
-          tx,
-        );
+      // Resolve warehouse from first stock movement
+      const firstMovement = await (tx as any).stockMovement.findFirst({
+        where: { saleId: id },
+      });
+      const warehouseId = firstMovement?.warehouseId;
+
+      if (warehouseId) {
+        for (const item of sale.items) {
+          await this.inventoryService.recordMovement(
+            {
+              productId: item.productId,
+              warehouseId,
+              type: 'SALES_RETURN',
+              quantity: item.quantity.toString(),
+              saleId: id,
+              notes: `Void: ${reason}`,
+              createdBy: voidedBy,
+            },
+            tx,
+          );
+        }
       }
 
       return (tx as any).sale.update({

@@ -18,6 +18,8 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { AccountingModule } from './modules/accounting/accounting.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { AppCacheModule } from './modules/cache/cache.module';
+import { HealthModule } from './modules/health/health.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -56,6 +58,8 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     InventoryModule,
     AccountingModule,
     SettingsModule,
+    AppCacheModule,
+    HealthModule,
   ],
   providers: [
     // Global JWT guard — all routes require auth unless @Public()
