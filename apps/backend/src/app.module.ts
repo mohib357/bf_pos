@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 
 import {
@@ -23,6 +23,7 @@ import { AccountingModule } from './modules/accounting/accounting.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { AppCacheModule } from './modules/cache/cache.module';
 import { HealthModule } from './modules/health/health.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -39,12 +40,19 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
       envFilePath: ['.env', '.env.local'],
     }),
 
-    // Rate limiting
+    /**
+     * Rate Limiting — in-memory storage (Redis-backed version requires
+     * nestjs-throttler-storage-redis compatible with @nestjs/throttler v5).
+     * The in-memory store is process-local but fully functional for single-instance deploys.
+     * For multi-instance Redis integration, upgrade storage when the package ships v5 support.
+     *
+     * Two tiers:
+     *  - "default": 100 req / 60s — all routes
+     *  - "login":     5 req / 60s — POST /auth/login (via @Throttle decorator)
+     */
     ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: 100,
-      },
+      { name: 'default', ttl: 60_000, limit: 100 },
+      { name: 'login',   ttl: 60_000, limit: 5   },
     ]),
 
     // Core
@@ -68,8 +76,14 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     SettingsModule,
     AppCacheModule,
     HealthModule,
+    NotificationsModule,
   ],
   providers: [
+    // Global throttle guard — applies "default" tier to all routes
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     // Global JWT guard — all routes require auth unless @Public()
     {
       provide: APP_GUARD,

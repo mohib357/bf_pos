@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import apiClient from '@/lib/api';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -51,6 +52,37 @@ export function Header({ onToggleSidebar, sidebarCollapsed }: HeaderProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const breadcrumbs = useBreadcrumbs();
+
+  // Real notifications from backend
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const fetchNotifications = async () => {
+    try {
+      const [listRes, countRes] = await Promise.all([
+        apiClient.get('/notifications', { params: { limit: 8 } }),
+        apiClient.get('/notifications/unread-count'),
+      ]);
+      setNotifications(listRes.data?.data ?? []);
+      setUnreadCount(countRes.data?.data?.count ?? 0);
+    } catch {
+      // Silent — notifications are non-critical
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const markAllRead = async () => {
+    try {
+      await apiClient.post('/notifications/mark-all-read', {});
+      setUnreadCount(0);
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    } catch {}
+  };
 
   const handleLogout = async () => {
     setShowUserMenu(false);
@@ -134,25 +166,57 @@ export function Header({ onToggleSidebar, sidebarCollapsed }: HeaderProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
               d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
           </svg>
-          {/* Notification dot */}
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+          {/* Real unread count badge */}
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
         </button>
         {showNotifications && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setShowNotifications(false)} />
-            <div className="absolute right-0 mt-1 w-72 bg-white rounded-xl border border-gray-200 shadow-lg z-20 overflow-hidden">
+            <div className="absolute right-0 mt-1 w-80 bg-white rounded-xl border border-gray-200 shadow-lg z-20 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900">Notifications / বিজ্ঞপ্তি</h3>
-                <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">New</span>
+                {unreadCount > 0 && (
+                  <button onClick={markAllRead} className="text-xs text-green-600 hover:underline">
+                    Mark all read
+                  </button>
+                )}
               </div>
-              <div className="py-2">
-                <div className="px-4 py-3 hover:bg-gray-50 cursor-pointer">
-                  <p className="text-sm text-gray-700">System is ready</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Just now</p>
-                </div>
-                <div className="px-4 py-3 text-center text-xs text-gray-400">
-                  No more notifications
-                </div>
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-xs text-gray-400">
+                    No notifications / কোনো বিজ্ঞপ্তি নেই
+                  </div>
+                ) : (
+                  notifications.map((n: any) => (
+                    <div
+                      key={n.id}
+                      className={cn(
+                        'px-4 py-3 border-b border-gray-50 hover:bg-gray-50 cursor-pointer',
+                        !n.isRead && 'bg-green-50 border-l-2 border-l-green-500',
+                      )}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!n.isRead && (
+                          <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5 shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-700 font-medium truncate">{n.title}</p>
+                          {n.titleBn && <p className="text-xs text-gray-500 truncate">{n.titleBn}</p>}
+                          <p className="text-xs text-gray-400 mt-0.5">{new Date(n.createdAt).toLocaleString('en-GB')}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="px-4 py-2 border-t border-gray-100 text-center">
+                <span className="text-xs text-gray-400">
+                  Served from <code className="bg-gray-100 px-1 rounded">/api/v1/notifications</code>
+                </span>
               </div>
             </div>
           </>

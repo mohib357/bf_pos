@@ -4,7 +4,9 @@ import { Controller, Get, Post, Patch, Body, Param, Query, ParseUUIDPipe } from 
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { ApiResponse } from '../../common/dto/api-response.dto';
 import { CreateSupplierDto } from './suppliers.service';
+import { ApiExcludeController } from '@nestjs/swagger';
 
+@ApiExcludeController()
 @Controller('suppliers')
 class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}

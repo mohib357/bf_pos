@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { ApiResponse } from '../../common/dto/api-response.dto';
+import { ApiExcludeController } from '@nestjs/swagger';
 
 @Injectable()
 class SettingsService {
@@ -32,6 +33,7 @@ class SettingsService {
   }
 }
 
+@ApiExcludeController()
 @Controller('settings')
 class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}

@@ -39,33 +39,30 @@ async function bootstrap() {
 
   // Swagger documentation (dev only)
   if (nodeEnv !== 'production') {
-    try {
-      const swaggerConfig = new DocumentBuilder()
-        .setTitle('Barakah Finance POS API')
-        .setDescription('Business Management System API — Library & Stationery')
-        .setVersion('1.0')
-        .addBearerAuth()
-        .addTag('auth', 'Authentication')
-        .addTag('users', 'User Management')
-        .addTag('products', 'Product Catalog')
-        .addTag('sales', 'Sales / POS')
-        .addTag('purchases', 'Purchases')
-        .addTag('suppliers', 'Suppliers')
-        .addTag('customers', 'Customers')
-        .addTag('inventory', 'Inventory')
-        .addTag('accounting', 'Accounting')
-        .addTag('settings', 'Settings')
-        .build();
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Barakah Finance POS API')
+      .setDescription('Business Management System API — Library & Stationery POS\n\n**Auth:** All protected endpoints require `Authorization: Bearer <access_token>`.\nOr send the `access_token` HttpOnly cookie (browser flow).')
+      .setVersion('1.0')
+      .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'access-token')
+      .addCookieAuth('access_token')
+      .addTag('auth',       'Authentication & Session')
+      .addTag('users',      'User Management')
+      .addTag('roles',      'Roles & Permissions')
+      .addTag('admin',      'Super Admin Panel')
+      .addTag('products',   'Product Catalog')
+      .addTag('sales',      'Sales / POS')
+      .addTag('purchases',  'Purchases')
+      .addTag('customers',  'Customers')
+      .addTag('inventory',  'Inventory')
+      .addTag('accounting', 'Accounting')
+      .addTag('health',     'Health Check')
+      .build();
 
-      const document = SwaggerModule.createDocument(app, swaggerConfig);
-      SwaggerModule.setup('api/docs', app, document, {
-        swaggerOptions: { persistAuthorization: true },
-      });
-
-      console.log(`📖 API Docs: http://localhost:${port}/api/docs`);
-    } catch (swaggerErr) {
-      console.warn('⚠️  Swagger setup skipped (circular ref):', (swaggerErr as Error).message);
-    }
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: { persistAuthorization: true },
+    });
+    console.log(`📖 API Docs: http://localhost:${port}/api/docs`);
   }
 
   await app.listen(port, '0.0.0.0');

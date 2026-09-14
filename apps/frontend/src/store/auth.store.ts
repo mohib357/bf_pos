@@ -1,8 +1,19 @@
+/**
+ * Auth Store — Cookie-based Session
+ *
+ * Tokens (access_token, refresh_token) live ONLY in HttpOnly cookies
+ * set by the backend. This store holds only the user profile, which
+ * is non-sensitive and safe to persist in localStorage.
+ *
+ * Token storage summary:
+ *  BEFORE: localStorage.setItem('accessToken', ...)  ← XSS-readable ❌
+ *  AFTER:  HttpOnly cookie set by backend             ← XSS-proof   ✓
+ */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import apiClient from '@/lib/api';
 
-interface User {
+export interface AuthUser {
   id: string;
   username: string;
   email?: string;
@@ -10,53 +21,56 @@ interface User {
   lastName?: string;
   firstNameBn?: string;
   lastNameBn?: string;
+  avatar?: string | null;
   branchId?: string;
   isSuperAdmin: boolean;
   roles: string[];
   permissions: string[];
+  mustChangePwd?: boolean;
 }
 
 interface AuthState {
-  user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
-  setTokens: (accessToken: string, refreshToken: string) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      accessToken: null,
-      refreshToken: null,
       isAuthenticated: false,
 
       login: async (username, password) => {
+        // POST login — backend sets access_token + refresh_token HttpOnly cookies
         const res = await apiClient.post('/auth/login', { username, password });
-        const { accessToken, refreshToken, user } = res.data.data;
-        localStorage.setItem('accessToken', accessToken);
-        localStorage.setItem('refreshToken', refreshToken);
-        set({ user, accessToken, refreshToken, isAuthenticated: true });
+        const { user } = res.data.data;
+        // Store only user profile — no tokens in JS memory or localStorage
+        set({ user, isAuthenticated: true });
       },
 
       logout: async () => {
         try {
-          const { refreshToken } = get();
-          await apiClient.post('/auth/logout', { refreshToken });
-        } catch {}
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
+          // POST logout — backend revokes DB refresh token, clears cookies
+          await apiClient.post('/auth/logout', {});
+        } catch {
+          // Even if the request fails, clear local state
+        }
+        set({ user: null, isAuthenticated: false });
       },
 
-      setTokens: (accessToken, refreshToken) => {
-        localStorage.setItem('accessToken', accessToken);
-        localStorage.setItem('refreshToken', refreshToken);
-        set({ accessToken, refreshToken });
+      refreshUser: async () => {
+        try {
+          const res = await apiClient.get('/auth/profile');
+          const user = res.data.data;
+          const { passwordHash: _, ...safeUser } = user;
+          set({ user: safeUser, isAuthenticated: true });
+        } catch {
+          set({ user: null, isAuthenticated: false });
+        }
       },
 
       hasPermission: (permission: string) => {
@@ -68,10 +82,9 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'bf-pos-auth',
+      // Only persist the user profile — never tokens
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     },

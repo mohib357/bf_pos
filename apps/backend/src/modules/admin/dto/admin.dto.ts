@@ -122,8 +122,16 @@ export class UpdateSettingDto {
   value: string;
 }
 
+export class SettingKeyValueDto {
+  @IsString()
+  key: string;
+
+  @IsString()
+  value: string;
+}
+
 export class BulkUpdateSettingsDto {
-  settings: { key: string; value: string }[];
+  settings: SettingKeyValueDto[];
 }
 
 export class UpdateNumberingDto {
