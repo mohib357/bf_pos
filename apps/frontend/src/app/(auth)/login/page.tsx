@@ -142,17 +142,22 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {/* Remember me */}
-              <div className="flex items-center">
-                <input
-                  {...register('remember')}
-                  id="remember"
-                  type="checkbox"
-                  className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
-                />
-                <label htmlFor="remember" className="ml-2 text-sm text-gray-600 cursor-pointer">
-                  Remember me / মনে রাখুন
-                </label>
+              {/* Remember me + Forgot password */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <input
+                    {...register('remember')}
+                    id="remember"
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
+                  />
+                  <label htmlFor="remember" className="ml-2 text-sm text-gray-600 cursor-pointer">
+                    Remember me / মনে রাখুন
+                  </label>
+                </div>
+                <a href="/forgot-password" className="text-sm text-green-600 hover:text-green-700 font-medium">
+                  Forgot password?
+                </a>
               </div>
 
               {/* Server error */}

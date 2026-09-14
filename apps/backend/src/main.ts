@@ -39,29 +39,33 @@ async function bootstrap() {
 
   // Swagger documentation (dev only)
   if (nodeEnv !== 'production') {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle('Barakah Finance POS API')
-      .setDescription('Business Management System API — Library & Stationery')
-      .setVersion('1.0')
-      .addBearerAuth()
-      .addTag('auth', 'Authentication')
-      .addTag('users', 'User Management')
-      .addTag('products', 'Product Catalog')
-      .addTag('sales', 'Sales / POS')
-      .addTag('purchases', 'Purchases')
-      .addTag('suppliers', 'Suppliers')
-      .addTag('customers', 'Customers')
-      .addTag('inventory', 'Inventory')
-      .addTag('accounting', 'Accounting')
-      .addTag('settings', 'Settings')
-      .build();
+    try {
+      const swaggerConfig = new DocumentBuilder()
+        .setTitle('Barakah Finance POS API')
+        .setDescription('Business Management System API — Library & Stationery')
+        .setVersion('1.0')
+        .addBearerAuth()
+        .addTag('auth', 'Authentication')
+        .addTag('users', 'User Management')
+        .addTag('products', 'Product Catalog')
+        .addTag('sales', 'Sales / POS')
+        .addTag('purchases', 'Purchases')
+        .addTag('suppliers', 'Suppliers')
+        .addTag('customers', 'Customers')
+        .addTag('inventory', 'Inventory')
+        .addTag('accounting', 'Accounting')
+        .addTag('settings', 'Settings')
+        .build();
 
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('api/docs', app, document, {
-      swaggerOptions: { persistAuthorization: true },
-    });
+      const document = SwaggerModule.createDocument(app, swaggerConfig);
+      SwaggerModule.setup('api/docs', app, document, {
+        swaggerOptions: { persistAuthorization: true },
+      });
 
-    console.log(`📖 API Docs: http://localhost:${port}/api/docs`);
+      console.log(`📖 API Docs: http://localhost:${port}/api/docs`);
+    } catch (swaggerErr) {
+      console.warn('⚠️  Swagger setup skipped (circular ref):', (swaggerErr as Error).message);
+    }
   }
 
   await app.listen(port, '0.0.0.0');

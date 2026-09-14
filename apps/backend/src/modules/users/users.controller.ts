@@ -44,9 +44,22 @@ export class UsersController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDto,
+    @CurrentUser('id') userId: string,
   ) {
-    const user = await this.usersService.update(id, dto);
+    const user = await this.usersService.update(id, dto, userId);
     return ApiResponse.success(user, 'User updated', 'ব্যবহারকারী আপডেট হয়েছে');
+  }
+
+  @Patch(':id/status')
+  @RequirePermissions('users:update:users')
+  @HttpCode(HttpStatus.OK)
+  async toggleStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' },
+    @CurrentUser('id') userId: string,
+  ) {
+    const result = await this.usersService.toggleStatus(id, body.status, userId);
+    return ApiResponse.success(result, 'User status updated', 'ব্যবহারকারীর স্ট্যাটাস আপডেট হয়েছে');
   }
 
   @Post(':id/roles')
@@ -64,8 +77,11 @@ export class UsersController {
   @Delete(':id')
   @RequirePermissions('users:delete:users')
   @HttpCode(HttpStatus.OK)
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    const result = await this.usersService.softDelete(id);
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    const result = await this.usersService.softDelete(id, userId);
     return ApiResponse.success(result);
   }
 }

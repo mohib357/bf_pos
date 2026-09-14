@@ -4,6 +4,8 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '@prisma/client';
 import { CreateUserDto, UpdateUserDto, AssignRolesDto } from './dto/user.dto';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
@@ -14,10 +16,10 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private audit: AuditService,
   ) {}
 
   async create(dto: CreateUserDto, createdBy?: string) {
-    // Check uniqueness
     const existing = await this.prisma.user.findFirst({
       where: {
         OR: [
@@ -29,7 +31,7 @@ export class UsersService {
       },
     });
     if (existing) {
-      throw new ConflictException('Username, email, or phone already in use');
+      throw new ConflictException('Username, email, or phone already in use / ব্যবহারকারীর নাম, ইমেইল বা ফোন ইতিমধ্যে ব্যবহৃত');
     }
 
     const rounds = this.config.get<number>('bcrypt.rounds') || 12;
@@ -61,6 +63,19 @@ export class UsersService {
       include: {
         userRoles: { include: { role: true } },
         branch: true,
+      },
+    });
+
+    await this.audit.log({
+      userId: createdBy,
+      action: AuditAction.CREATE,
+      tableName: 'users',
+      recordId: user.id,
+      newValues: {
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
       },
     });
 
@@ -96,7 +111,7 @@ export class UsersService {
         skip,
         take,
         include: {
-          userRoles: { include: { role: true } },
+          userRoles: { include: { role: { select: { id: true, name: true, nameBn: true } } } },
           branch: { select: { id: true, name: true, nameBn: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -104,7 +119,7 @@ export class UsersService {
       this.prisma.user.count({ where }),
     ]);
 
-    const safeUsers = users.map(({ passwordHash: _, ...u }) => u);
+    const safeUsers = users.map(({ passwordHash: _, pwdResetToken: __, pwdResetExpiry: ___, ...u }) => u);
     return buildPaginatedResult(safeUsers, total, params.page || 1, take);
   }
 
@@ -112,17 +127,25 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id },
       include: {
-        userRoles: { include: { role: true } },
+        userRoles: {
+          include: {
+            role: {
+              include: {
+                rolePermissions: { include: { permission: true } },
+              },
+            },
+          },
+        },
         branch: true,
       },
     });
-    if (!user || user.deletedAt) throw new NotFoundException('User not found');
-    const { passwordHash: _, ...safeUser } = user;
+    if (!user || user.deletedAt) throw new NotFoundException('User not found / ব্যবহারকারী পাওয়া যায়নি');
+    const { passwordHash: _, pwdResetToken: __, pwdResetExpiry: ___, ...safeUser } = user;
     return safeUser;
   }
 
-  async update(id: string, dto: UpdateUserDto) {
-    await this.findOne(id);
+  async update(id: string, dto: UpdateUserDto, updatedBy?: string) {
+    const existing = await this.findOne(id);
     const user = await this.prisma.user.update({
       where: { id },
       data: {
@@ -139,34 +162,95 @@ export class UsersService {
       },
       include: { branch: true },
     });
+
+    await this.audit.log({
+      userId: updatedBy,
+      action: AuditAction.UPDATE,
+      tableName: 'users',
+      recordId: id,
+      oldValues: {
+        status: (existing as any).status,
+        email: (existing as any).email,
+        branchId: (existing as any).branchId,
+      },
+      newValues: dto,
+    });
+
     const { passwordHash: _, ...safeUser } = user;
     return safeUser;
   }
 
-  async assignRoles(userId: string, dto: AssignRolesDto, assignedBy?: string) {
-    await this.findOne(userId);
-
-    // Remove existing roles and reassign
-    await this.prisma.userRole.deleteMany({ where: { userId } });
-
-    const userRoles = await this.prisma.userRole.createMany({
-      data: dto.roleIds.map((roleId) => ({
-        userId,
-        roleId,
-        branchId: dto.branchId,
-        assignedBy,
-      })),
+  async toggleStatus(id: string, status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED', updatedBy?: string) {
+    const existing = await this.findOne(id);
+    await this.prisma.user.update({
+      where: { id },
+      data: { status },
     });
 
-    return userRoles;
+    await this.audit.log({
+      userId: updatedBy,
+      action: AuditAction.UPDATE,
+      tableName: 'users',
+      recordId: id,
+      oldValues: { status: (existing as any).status },
+      newValues: { status },
+    });
+
+    return { message: `User status updated to ${status}`, status };
   }
 
-  async softDelete(id: string) {
+  async assignRoles(userId: string, dto: AssignRolesDto, assignedBy?: string) {
+    const existing = await this.findOne(userId);
+
+    // Get current roles for audit
+    const oldRoleIds = ((existing as any).userRoles || []).map((ur: any) => ur.roleId);
+
+    await this.prisma.userRole.deleteMany({ where: { userId } });
+
+    if (dto.roleIds.length > 0) {
+      await this.prisma.userRole.createMany({
+        data: dto.roleIds.map((roleId) => ({
+          userId,
+          roleId,
+          branchId: dto.branchId,
+          assignedBy,
+        })),
+      });
+    }
+
+    await this.audit.log({
+      userId: assignedBy,
+      action: AuditAction.UPDATE,
+      tableName: 'user_roles',
+      recordId: userId,
+      oldValues: { roleIds: oldRoleIds },
+      newValues: { roleIds: dto.roleIds },
+    });
+
+    return this.findOne(userId);
+  }
+
+  async softDelete(id: string, deletedBy?: string) {
     await this.findOne(id);
     await this.prisma.user.update({
       where: { id },
       data: { deletedAt: new Date(), status: 'INACTIVE' },
     });
+
+    // Revoke all refresh tokens
+    await this.prisma.refreshToken.updateMany({
+      where: { userId: id },
+      data: { isRevoked: true },
+    });
+
+    await this.audit.log({
+      userId: deletedBy,
+      action: AuditAction.DELETE,
+      tableName: 'users',
+      recordId: id,
+      newValues: { action: 'soft_delete' },
+    });
+
     return { message: 'User deleted / ব্যবহারকারী মুছে ফেলা হয়েছে' };
   }
 }

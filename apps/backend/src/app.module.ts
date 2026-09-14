@@ -8,8 +8,11 @@ import {
 } from './config/app.config';
 
 import { PrismaModule } from './prisma/prisma.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { RolesModule } from './modules/roles/roles.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { ProductsModule } from './modules/products/products.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
@@ -47,9 +50,14 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     // Core
     PrismaModule,
 
+    // Audit (global — provides AuditService everywhere)
+    AuditModule,
+
     // Feature modules
     AuthModule,
     UsersModule,
+    RolesModule,
+    AdminModule,
     ProductsModule,
     SalesModule,
     PurchasesModule,
