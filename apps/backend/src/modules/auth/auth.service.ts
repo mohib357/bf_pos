@@ -89,6 +89,10 @@ export class AuthService {
         branchId: user.branchId,
         isSuperAdmin,
         permissions,
+        // Embed password-change timestamp so old tokens self-invalidate on next request
+        pwdChangedAt: user.pwdChangedAt
+          ? new Date(user.pwdChangedAt).getTime()
+          : 0,
       },
       {
         secret: this.config.get<string>('jwt.secret'),
@@ -389,17 +393,26 @@ export class AuthService {
 
     const rounds = this.config.get<number>('bcrypt.rounds') || 12;
     const newHash = await bcrypt.hash(dto.newPassword, rounds);
+    const now = new Date();
 
-    await this.prisma.user.update({
+    await (this.prisma.user as any).update({
       where: { id: userId },
-      data: { passwordHash: newHash, mustChangePwd: false },
+      data: { passwordHash: newHash, mustChangePwd: false, pwdChangedAt: now },
     });
 
-    // Revoke all refresh tokens (force re-login everywhere)
+    // Revoke all refresh tokens (force re-login on all devices)
     await this.prisma.refreshToken.updateMany({
       where: { userId },
       data: { isRevoked: true },
     });
+
+    // Blacklist all currently active access tokens for this user.
+    // We cannot enumerate them since JWTs are stateless, but we store a
+    // per-user "password changed at" sentinel in cache.  JwtStrategy
+    // validates this sentinel on every request.
+    const jwtTtlSeconds = 900; // 15m — matches JWT_EXPIRES_IN
+    await this.cache.set(`pwd_changed:${userId}`, now.getTime().toString(), jwtTtlSeconds);
+    this.logger.log(`Password changed — all sessions invalidated for user ${userId}`);
 
     await this.audit.log({
       userId,
