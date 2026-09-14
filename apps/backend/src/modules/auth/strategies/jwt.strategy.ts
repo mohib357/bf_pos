@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { CacheService } from '../../cache/cache.module';
 import { JwtPayload } from '../dto/auth.dto';
 
 /**
@@ -24,15 +25,26 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private cache: CacheService,
   ) {
     super({
       jwtFromRequest: cookieOrHeaderExtractor,
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('jwt.secret'),
+      passReqToCallback: true,   // we need the raw token for blacklist check
     });
   }
 
-  async validate(payload: JwtPayload) {
+  async validate(req: Request, payload: JwtPayload) {
+    // ── Blacklist check — reject if this specific access token was revoked ──
+    const rawToken: string | null = cookieOrHeaderExtractor(req);
+    if (rawToken) {
+      const blacklisted = await this.cache.get(`blacklist:at:${rawToken}`);
+      if (blacklisted) {
+        throw new UnauthorizedException('Token has been revoked / টোকেন বাতিল করা হয়েছে');
+      }
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: {

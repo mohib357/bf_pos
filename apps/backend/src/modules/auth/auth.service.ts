@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CacheService } from '../cache/cache.module';
 import {
   LoginDto,
   ChangePasswordDto,
@@ -33,6 +34,7 @@ export class AuthService {
     private jwtService: JwtService,
     private config: ConfigService,
     private audit: AuditService,
+    private cache: CacheService,
   ) {}
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -321,13 +323,35 @@ export class AuthService {
 
   // ─── Logout ──────────────────────────────────────────────────────────────
 
-  async logout(userId: string, refreshToken?: string, ipAddress?: string, userAgent?: string) {
+  async logout(
+    userId: string,
+    refreshToken?: string,
+    ipAddress?: string,
+    userAgent?: string,
+    accessToken?: string,  // <-- added for blacklisting
+  ) {
+    // 1. Blacklist the access token in Redis/memory (TTL = access token lifetime = 15m)
+    if (accessToken) {
+      try {
+        // Decode to get exact expiry without full verification
+        const decoded = this.jwtService.decode(accessToken) as any;
+        const nowSec  = Math.floor(Date.now() / 1000);
+        const ttl     = decoded?.exp ? Math.max(decoded.exp - nowSec, 1) : 900; // 15m default
+        await this.cache.set(`blacklist:at:${accessToken}`, '1', ttl);
+        this.logger.log(`Access token blacklisted (TTL=${ttl}s) for user ${userId}`);
+      } catch {
+        // Never block logout on blacklist failure
+      }
+    }
+
+    // 2. Revoke DB refresh tokens
     if (refreshToken) {
       await this.prisma.refreshToken.updateMany({
         where: { userId, token: refreshToken },
         data: { isRevoked: true },
       });
     } else {
+      // No refresh token provided — revoke ALL for this user (sign out all devices)
       await this.prisma.refreshToken.updateMany({
         where: { userId },
         data: { isRevoked: true },

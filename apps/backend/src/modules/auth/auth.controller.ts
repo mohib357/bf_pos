@@ -124,7 +124,11 @@ export class AuthController {
     const ua = req.headers['user-agent'];
     // Accept token from cookie (browser) or body (API clients)
     const refreshToken = (req.cookies as any)?.refresh_token ?? body.refreshToken;
-    const result = await this.authService.logout(userId, refreshToken, ip, ua);
+    // Extract access token for blacklisting (from cookie or Bearer header)
+    const accessToken: string | undefined =
+      (req.cookies as any)?.access_token ??
+      (req.headers['authorization'] as string | undefined)?.replace(/^Bearer\s+/i, '');
+    const result = await this.authService.logout(userId, refreshToken, ip, ua, accessToken);
     clearAuthCookies(res);
     return ApiResponse.success(result, 'Logged out', 'লগআউট হয়েছে');
   }

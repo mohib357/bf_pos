@@ -201,9 +201,10 @@ model User {
   mustChangePwd Boolean    @default(false) @map("must_change_pwd")
   loginAttempts Int        @default(0) @map("login_attempts")
   lockedUntil   DateTime?  @map("locked_until")
-  pwdResetToken String?    @map("pwd_reset_token")
+  pwdResetToken  String?    @map("pwd_reset_token")
   pwdResetExpiry DateTime? @map("pwd_reset_expiry")
-  createdAt     DateTime   @default(now()) @map("created_at")
+  pwdChangedAt   DateTime? @map("pwd_changed_at")  // updated on every password change — used to invalidate JWTs
+  createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
   deletedAt     DateTime?  @map("deleted_at")
   createdBy     String?    @map("created_by")

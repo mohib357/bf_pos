@@ -169,9 +169,14 @@ export class UsersService {
       tableName: 'users',
       recordId: id,
       oldValues: {
-        status: (existing as any).status,
-        email: (existing as any).email,
-        branchId: (existing as any).branchId,
+        firstName:   (existing as any).firstName,
+        lastName:    (existing as any).lastName,
+        firstNameBn: (existing as any).firstNameBn,
+        lastNameBn:  (existing as any).lastNameBn,
+        email:       (existing as any).email,
+        phone:       (existing as any).phone,
+        status:      (existing as any).status,
+        branchId:    (existing as any).branchId,
       },
       newValues: dto,
     });
