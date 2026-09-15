@@ -1,7 +1,7 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
-  "testRegex": ".*\\.e2e-spec\\.ts$",
+  "rootDir": "..",
+  "testRegex": "test/.*\\.e2e-spec\\.ts$",
   "transform": {
     "^.+\\.(t|j)s$": ["ts-jest", {
       "tsconfig": {
@@ -11,9 +11,10 @@
     }]
   },
   "testEnvironment": "node",
-  "testTimeout": 30000,
+  "testTimeout": 60000,
   "forceExit": true,
   "verbose": true,
-  "runInBand": true,
-  "maxWorkers": 1
+  "maxWorkers": 1,
+  "globalSetup":    "<rootDir>/test/setup-e2e.ts",
+  "globalTeardown": "<rootDir>/test/teardown-e2e.ts"
 }

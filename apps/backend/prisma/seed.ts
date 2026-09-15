@@ -237,6 +237,7 @@ const SEQUENCES = [
   { module: 'journal_entry',     prefix: 'JE',  separator: '-', padding: 6, currentNo: 0 },
   { module: 'stock_adjustment',  prefix: 'ADJ', separator: '-', padding: 6, currentNo: 0 },
   { module: 'stock_count',       prefix: 'SC',  separator: '-', padding: 6, currentNo: 0 },
+  { module: 'purchase_return',   prefix: 'PR',  separator: '-', padding: 6, currentNo: 0 },
 ];
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
@@ -423,6 +424,451 @@ async function seedProducts(
   }
 }
 
+// ─── DEMO PURCHASES SEED ─────────────────────────────────────────────────────
+async function seedDemoPurchases(
+  branchId: string,
+  suppliers: any[],
+  unitMap: Record<string, string>,
+  adminUserId: string,
+) {
+  // Already seeded guard
+  const existing = await prisma.purchase.findFirst();
+  if (existing) {
+    console.log('  ⏭ Demo purchases already exist, skipping.');
+    return;
+  }
+
+  // Ensure purchase_return sequence exists
+  await prisma.numberingSequence.upsert({
+    where: { module: 'purchase_return' },
+    update: {},
+    create: { module: 'purchase_return', prefix: 'PR', separator: '-', padding: 6, currentNo: 0 },
+  });
+
+  const warehouse = await prisma.warehouse.findFirst({ where: { branchId, isDefault: true } });
+  if (!warehouse) { console.warn('  ⚠ No warehouse found, skipping demo purchases'); return; }
+
+  const [sup1, sup2, sup3] = suppliers;
+
+  // Look up products
+  const prod1 = await prisma.product.findUnique({ where: { sku: 'BOOK-SCH-001' } });
+  const prod2 = await prisma.product.findUnique({ where: { sku: 'BOOK-ISL-001' } });
+  const prod3 = await prisma.product.findUnique({ where: { sku: 'STA-PEN-001' } });
+  const prod4 = await prisma.product.findUnique({ where: { sku: 'STA-NB-002' } });
+  const prod5 = await prisma.product.findUnique({ where: { sku: 'BOOK-QH-001' } });
+
+  const pcUnit = unitMap['pc'];
+  const dzUnit = unitMap['dz'];
+
+  async function nextPONumber() {
+    return prisma.$transaction(async (tx) => {
+      const seq = await (tx as any).numberingSequence.findUnique({ where: { module: 'purchase' } });
+      const next = seq.currentNo + 1;
+      await (tx as any).numberingSequence.update({ where: { module: 'purchase' }, data: { currentNo: next } });
+      return `PO-${String(next).padStart(6, '0')}`;
+    });
+  }
+  async function nextPRNumber() {
+    return prisma.$transaction(async (tx) => {
+      const seq = await (tx as any).numberingSequence.findUnique({ where: { module: 'purchase_return' } });
+      const next = seq.currentNo + 1;
+      await (tx as any).numberingSequence.update({ where: { module: 'purchase_return' }, data: { currentNo: next } });
+      return `PR-${String(next).padStart(6, '0')}`;
+    });
+  }
+  async function nextPAYNumber() {
+    return prisma.$transaction(async (tx) => {
+      const seq = await (tx as any).numberingSequence.findUnique({ where: { module: 'supplier_payment' } });
+      const next = seq.currentNo + 1;
+      await (tx as any).numberingSequence.update({ where: { module: 'supplier_payment' }, data: { currentNo: next } });
+      return `PAY-${String(next).padStart(6, '0')}`;
+    });
+  }
+  async function nextJENumber() {
+    return prisma.$transaction(async (tx) => {
+      const seq = await (tx as any).numberingSequence.findUnique({ where: { module: 'journal_entry' } });
+      const next = seq.currentNo + 1;
+      await (tx as any).numberingSequence.update({ where: { module: 'journal_entry' }, data: { currentNo: next } });
+      return `JE-${String(next).padStart(6, '0')}`;
+    });
+  }
+
+  const invAcc  = await prisma.account.findFirst({ where: { subType: 'INVENTORY', isSystem: true } });
+  const cashAcc = await prisma.account.findFirst({ where: { subType: 'CASH', isSystem: true } });
+  const apAcc   = await prisma.account.findFirst({ where: { subType: 'ACCOUNTS_PAYABLE', isSystem: true } });
+
+  // ── Purchase 1: Fully paid (Cash) ────────────────────────────────────────
+  if (prod1 && prod2) {
+    const invoiceNumber = await nextPONumber();
+    const p1 = await prisma.purchase.create({
+      data: {
+        branchId, supplierId: sup1.id, invoiceNumber,
+        referenceNo: 'BOI-REF-001',
+        purchaseDate: new Date(Date.now() - 7 * 86400000), // 7 days ago
+        status: 'RECEIVED', paymentStatus: 'PAID',
+        subtotal: '8000.00', discountAmount: '0.00', taxAmount: '0.00',
+        shippingCost: '200.00', otherCost: '0.00',
+        totalAmount: '8200.00', paidAmount: '8200.00', dueAmount: '0.00',
+        notes: 'School books stock-up',
+        createdBy: adminUserId,
+        items: {
+          create: [
+            {
+              productId: prod1.id, unitId: pcUnit,
+              quantity: '50', receivedQty: '50', unitCost: '80.0000',
+              discountRate: '0.00', discountAmount: '0.0000',
+              taxRate: '0.00', taxAmount: '0.0000', totalAmount: '4000.0000',
+            },
+            {
+              productId: prod2.id, unitId: pcUnit,
+              quantity: '50', receivedQty: '50', unitCost: '80.0000',
+              discountRate: '0.00', discountAmount: '0.0000',
+              taxRate: '0.00', taxAmount: '0.0000', totalAmount: '4000.0000',
+            },
+          ],
+        },
+      },
+    });
+
+    // Stock movements
+    for (const [prodId, qty] of [[prod1.id, 50], [prod2.id, 50]] as [string, number][]) {
+      const ps = await prisma.productStock.findUnique({
+        where: { productId_warehouseId: { productId: prodId, warehouseId: warehouse.id } },
+      });
+      if (!ps) {
+        await prisma.productStock.create({ data: { productId: prodId, warehouseId: warehouse.id, quantity: 0 } });
+      }
+      await prisma.stockMovement.create({
+        data: {
+          productId: prodId, warehouseId: warehouse.id,
+          type: 'PURCHASE', quantity: qty.toString(),
+          unitCost: '80.0000', totalCost: (qty * 80).toString(),
+          balanceBefore: '0.0000', balanceAfter: qty.toString(),
+          purchaseId: p1.id, referenceType: 'purchase', referenceId: p1.id,
+          notes: `Purchase ${invoiceNumber}`, createdBy: adminUserId,
+        },
+      });
+      await prisma.productStock.upsert({
+        where: { productId_warehouseId: { productId: prodId, warehouseId: warehouse.id } },
+        update: { quantity: { increment: qty } },
+        create: { productId: prodId, warehouseId: warehouse.id, quantity: qty },
+      });
+    }
+
+    // Payment record
+    const payNum = await nextPAYNumber();
+    await prisma.supplierPayment.create({
+      data: {
+        supplierId: sup1.id, purchaseId: p1.id,
+        paymentNumber: payNum, paymentDate: new Date(Date.now() - 7 * 86400000),
+        amount: '8200.00', method: 'CASH', createdBy: adminUserId,
+      },
+    });
+
+    // Journal: Dr Inventory / Cr Cash
+    if (invAcc && cashAcc) {
+      const jeNum = await nextJENumber();
+      await prisma.journalEntry.create({
+        data: {
+          entryNumber: jeNum,
+          entryDate: new Date(Date.now() - 7 * 86400000),
+          type: 'PURCHASE', status: 'POSTED',
+          description: `Purchase - ${invoiceNumber}`,
+          totalDebit: '8200.00', totalCredit: '8200.00',
+          purchaseId: p1.id, createdBy: adminUserId,
+          lines: {
+            create: [
+              { debitAccountId: invAcc.id, amount: '8200.00', description: `Inventory - ${invoiceNumber}` },
+              { creditAccountId: cashAcc.id, amount: '8200.00', description: `Cash paid - ${invoiceNumber}` },
+            ],
+          },
+        },
+      });
+      await prisma.account.update({ where: { id: invAcc.id }, data: { currentBalance: { increment: 8200 } } });
+      await prisma.account.update({ where: { id: cashAcc.id }, data: { currentBalance: { decrement: 8200 } } });
+    }
+  }
+
+  // ── Purchase 2: Partially paid (bKash + Cash) — has DUE ──────────────────
+  if (prod3 && prod4) {
+    const invoiceNumber = await nextPONumber();
+    const p2 = await prisma.purchase.create({
+      data: {
+        branchId, supplierId: sup3.id, invoiceNumber,
+        purchaseDate: new Date(Date.now() - 3 * 86400000),
+        dueDate: new Date(Date.now() + 10 * 86400000),
+        status: 'RECEIVED', paymentStatus: 'PARTIAL',
+        subtotal: '4400.00', discountAmount: '0.00', taxAmount: '0.00',
+        shippingCost: '0.00', otherCost: '0.00',
+        totalAmount: '4400.00', paidAmount: '2000.00', dueAmount: '2400.00',
+        notes: 'Stationery restock',
+        createdBy: adminUserId,
+        items: {
+          create: [
+            {
+              productId: prod3.id, unitId: dzUnit,
+              quantity: '20', receivedQty: '20', unitCost: '60.0000',
+              discountRate: '0.00', discountAmount: '0.0000',
+              taxRate: '0.00', taxAmount: '0.0000', totalAmount: '1200.0000',
+            },
+            {
+              productId: prod4.id, unitId: pcUnit,
+              quantity: '50', receivedQty: '50', unitCost: '30.0000',
+              discountRate: '0.00', discountAmount: '0.0000',
+              taxRate: '0.00', taxAmount: '0.0000', totalAmount: '1500.0000',
+            },
+            {
+              productId: prod3.id, unitId: dzUnit,
+              quantity: '20', receivedQty: '20', unitCost: '60.0000',
+              discountRate: '0.00', discountAmount: '0.0000',
+              taxRate: '0.00', taxAmount: '0.0000', totalAmount: '1200.0000',
+            },
+            {
+              productId: prod4.id, unitId: pcUnit,
+              quantity: '25', receivedQty: '25', unitCost: '20.0000',
+              discountRate: '0.00', discountAmount: '0.0000',
+              taxRate: '0.00', taxAmount: '0.0000', totalAmount: '500.0000',
+            },
+          ],
+        },
+      },
+    });
+
+    // Stock movements
+    for (const [prodId, qty, cost] of [[prod3.id, 40, 60], [prod4.id, 75, 28]] as [string, number, number][]) {
+      await prisma.stockMovement.create({
+        data: {
+          productId: prodId, warehouseId: warehouse.id,
+          type: 'PURCHASE', quantity: qty.toString(),
+          unitCost: cost.toString(), totalCost: (qty * cost).toString(),
+          balanceBefore: '0.0000', balanceAfter: qty.toString(),
+          purchaseId: p2.id, referenceType: 'purchase', referenceId: p2.id,
+          createdBy: adminUserId,
+        },
+      });
+      await prisma.productStock.upsert({
+        where: { productId_warehouseId: { productId: prodId, warehouseId: warehouse.id } },
+        update: { quantity: { increment: qty } },
+        create: { productId: prodId, warehouseId: warehouse.id, quantity: qty },
+      });
+    }
+
+    // Payments: Cash 1000 + bKash 1000
+    const payNum1 = await nextPAYNumber();
+    await prisma.supplierPayment.create({
+      data: {
+        supplierId: sup3.id, purchaseId: p2.id,
+        paymentNumber: payNum1, paymentDate: new Date(Date.now() - 3 * 86400000),
+        amount: '1000.00', method: 'CASH', createdBy: adminUserId,
+      },
+    });
+    const payNum2 = await nextPAYNumber();
+    await prisma.supplierPayment.create({
+      data: {
+        supplierId: sup3.id, purchaseId: p2.id,
+        paymentNumber: payNum2, paymentDate: new Date(Date.now() - 3 * 86400000),
+        amount: '1000.00', method: 'MOBILE_BANKING', referenceNo: 'bKash-01711111111',
+        notes: 'bKash payment', createdBy: adminUserId,
+      },
+    });
+
+    // Update supplier balance (due)
+    await prisma.supplier.update({ where: { id: sup3.id }, data: { currentBalance: { increment: 2400 } } });
+
+    // Journal: Dr Inventory / Cr Cash 2000 / Cr AP 2400
+    if (invAcc && cashAcc && apAcc) {
+      const jeNum = await nextJENumber();
+      await prisma.journalEntry.create({
+        data: {
+          entryNumber: jeNum, entryDate: new Date(Date.now() - 3 * 86400000),
+          type: 'PURCHASE', status: 'POSTED',
+          description: `Purchase - ${invoiceNumber}`,
+          totalDebit: '4400.00', totalCredit: '4400.00',
+          purchaseId: p2.id, createdBy: adminUserId,
+          lines: {
+            create: [
+              { debitAccountId: invAcc.id, amount: '4400.00', description: `Inventory - ${invoiceNumber}` },
+              { creditAccountId: cashAcc.id, amount: '2000.00', description: `Cash paid - ${invoiceNumber}` },
+              { creditAccountId: apAcc.id, amount: '2400.00', description: `AP due - ${invoiceNumber}` },
+            ],
+          },
+        },
+      });
+      await prisma.account.update({ where: { id: invAcc.id }, data: { currentBalance: { increment: 4400 } } });
+      await prisma.account.update({ where: { id: cashAcc.id }, data: { currentBalance: { decrement: 2000 } } });
+      await prisma.account.update({ where: { id: apAcc.id }, data: { currentBalance: { increment: 2400 } } });
+    }
+
+    // ── Purchase Return on Purchase 2 (10 notebook exercise books) ──────────
+    if (prod4) {
+      const p2Items = await prisma.purchaseItem.findMany({ where: { purchaseId: p2.id, productId: prod4.id } });
+      if (p2Items.length > 0) {
+        const retItem = p2Items[0];
+        const returnNumber = await nextPRNumber();
+        const retTotal = 10 * 30;
+
+        const pr = await prisma.purchaseReturn.create({
+          data: {
+            purchaseId: p2.id, supplierId: sup3.id,
+            returnNumber, returnDate: new Date(Date.now() - 1 * 86400000),
+            reason: 'Damaged notebooks — 10 units',
+            subtotal: retTotal.toFixed(2), taxAmount: '0.00', totalAmount: retTotal.toFixed(2),
+            refundMethod: 'CREDIT', status: 'CONFIRMED', createdBy: adminUserId,
+            items: {
+              create: [{
+                purchaseItemId: retItem.id, productId: prod4.id, unitId: pcUnit,
+                quantity: '10', unitCost: '30.0000',
+                taxRate: '0.00', taxAmount: '0.0000',
+                totalAmount: retTotal.toFixed(4),
+                reason: 'Damaged on delivery',
+              }],
+            },
+          },
+        });
+
+        // Update returnedQty on purchase item
+        await prisma.purchaseItem.update({
+          where: { id: retItem.id },
+          data: { returnedQty: { increment: 10 } },
+        });
+
+        // Decrease stock
+        await prisma.stockMovement.create({
+          data: {
+            productId: prod4.id, warehouseId: warehouse.id,
+            type: 'PURCHASE_RETURN', quantity: '10',
+            unitCost: '30.0000', totalCost: retTotal.toString(),
+            balanceBefore: '75.0000', balanceAfter: '65.0000',
+            purchaseId: p2.id, referenceType: 'purchase_return', referenceId: pr.id,
+            notes: `Purchase return ${returnNumber}`, createdBy: adminUserId,
+          },
+        });
+        await prisma.productStock.update({
+          where: { productId_warehouseId: { productId: prod4.id, warehouseId: warehouse.id } },
+          data: { quantity: { decrement: 10 } },
+        });
+
+        // Reduce supplier payable
+        await prisma.supplier.update({ where: { id: sup3.id }, data: { currentBalance: { decrement: retTotal } } });
+
+        // Journal: Dr AP / Cr Inventory (CREDIT refund method)
+        if (invAcc && apAcc) {
+          const jeNum = await nextJENumber();
+          await prisma.journalEntry.create({
+            data: {
+              entryNumber: jeNum, entryDate: new Date(Date.now() - 1 * 86400000),
+              type: 'RETURN', status: 'POSTED',
+              description: `Purchase return - ${returnNumber}`,
+              totalDebit: retTotal.toFixed(2), totalCredit: retTotal.toFixed(2),
+              purchaseId: p2.id, purchaseReturnId: pr.id, createdBy: adminUserId,
+              lines: {
+                create: [
+                  { debitAccountId: apAcc.id, amount: retTotal.toFixed(2), description: `Reduce AP - ${returnNumber}` },
+                  { creditAccountId: invAcc.id, amount: retTotal.toFixed(2), description: `Reduce inventory - ${returnNumber}` },
+                ],
+              },
+            },
+          });
+          await prisma.account.update({ where: { id: apAcc.id }, data: { currentBalance: { decrement: retTotal } } });
+          await prisma.account.update({ where: { id: invAcc.id }, data: { currentBalance: { decrement: retTotal } } });
+        }
+      }
+    }
+  }
+
+  // ── Purchase 3: Draft (not yet received) ─────────────────────────────────
+  if (prod5) {
+    const invoiceNumber = await nextPONumber();
+    await prisma.purchase.create({
+      data: {
+        branchId, supplierId: sup2.id, invoiceNumber,
+        purchaseDate: new Date(),
+        dueDate: new Date(Date.now() + 7 * 86400000),
+        status: 'DRAFT', paymentStatus: 'PENDING',
+        subtotal: '3000.00', discountAmount: '0.00', taxAmount: '0.00',
+        shippingCost: '0.00', otherCost: '0.00',
+        totalAmount: '3000.00', paidAmount: '0.00', dueAmount: '3000.00',
+        notes: 'Quran restock order — pending delivery',
+        createdBy: adminUserId,
+        items: {
+          create: [{
+            productId: prod5.id, unitId: pcUnit,
+            quantity: '15', receivedQty: '0', unitCost: '200.0000',
+            discountRate: '0.00', discountAmount: '0.0000',
+            taxRate: '0.00', taxAmount: '0.0000', totalAmount: '3000.0000',
+          }],
+        },
+      },
+    });
+  }
+
+  console.log('  ✅ Demo purchases, payments and returns seeded.');
+}
+
+// ─── OPENING CAPITAL ─────────────────────────────────────────────────────────
+async function seedOpeningCapital() {
+  // Idempotent guard
+  const existing = await prisma.journalEntry.findFirst({ where: { type: 'OPENING_BALANCE' } });
+  if (existing) { console.log('  ⏭ Opening capital already seeded.'); return; }
+
+  // ── Amounts from env (with defaults) ──
+  const amountCash  = Number(process.env.OPENING_CAPITAL_CASH  ?? 50000);
+  const amountBank  = Number(process.env.OPENING_CAPITAL_BANK  ?? 20000);
+  const amountBkash = Number(process.env.OPENING_CAPITAL_BKASH ?? 10000);
+  const amountNagad = Number(process.env.OPENING_CAPITAL_NAGAD ?? 5000);
+
+  const cash  = await prisma.account.findUnique({ where: { code: '1010' } });
+  const bank  = await prisma.account.findUnique({ where: { code: '1020' } });
+  const bkash = await prisma.account.findUnique({ where: { code: '1021' } });
+  const nagad = await prisma.account.findUnique({ where: { code: '1022' } });
+  const cap   = await prisma.account.findUnique({ where: { code: '3000' } });
+
+  if (!cash || !bank || !cap) throw new Error('Accounts 1010/1020/3000 not found');
+
+  const lines = [
+    { acc: cash,  amount: amountCash,  label: 'Cash in Hand'  },
+    { acc: bank,  amount: amountBank,  label: 'Bank Account'  },
+    ...(bkash && amountBkash > 0 ? [{ acc: bkash, amount: amountBkash, label: 'bKash Account' }] : []),
+    ...(nagad && amountNagad > 0 ? [{ acc: nagad, amount: amountNagad, label: 'Nagad Account' }] : []),
+  ].filter(l => l.amount > 0);
+
+  const total = lines.reduce((s, l) => s + l.amount, 0);
+
+  const seq    = await prisma.numberingSequence.findUnique({ where: { module: 'journal_entry' } });
+  const nextNo = (seq?.currentNo ?? 0) + 1;
+  const jeNum  = `JE-${String(nextNo).padStart(6, '0')}`;
+
+  await prisma.$transaction(async (tx) => {
+    await (tx as any).journalEntry.create({
+      data: {
+        entryNumber: jeNum,
+        entryDate:   new Date('2026-09-01'),
+        type: 'OPENING_BALANCE', status: 'POSTED',
+        description: 'Opening capital — business commencement',
+        totalDebit:  total.toFixed(2), totalCredit: total.toFixed(2),
+        lines: {
+          create: [
+            ...lines.map(l => ({
+              debitAccountId: l.acc!.id,
+              amount: l.amount.toFixed(2),
+              description: `Opening balance — ${l.label}`,
+            })),
+            { creditAccountId: cap.id, amount: total.toFixed(2), description: 'Opening capital injection' },
+          ],
+        },
+      },
+    });
+    for (const l of lines) {
+      await (tx as any).account.update({ where: { id: l.acc!.id }, data: { currentBalance: { increment: l.amount } } });
+    }
+    await (tx as any).account.update({ where: { id: cap.id }, data: { currentBalance: { increment: total } } });
+    await (tx as any).numberingSequence.update({ where: { module: 'journal_entry' }, data: { currentNo: nextNo } });
+  });
+
+  console.log(`  ✅ Opening capital ${jeNum}: Dr Cash/Bank ৳${total.toLocaleString()} / Cr Capital`);
+  console.log(`     Cash=${amountCash}, Bank=${amountBank}, bKash=${amountBkash}, Nagad=${amountNagad}`);
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('🌱 Starting database seed v2...');
@@ -581,22 +1027,39 @@ async function main() {
   console.log(`  → Sample products (${SAMPLE_PRODUCTS.length} items)...`);
   await seedProducts(categoryMap, unitMap, brandMap);
 
-  // 13. Demo Supplier & Customer
-  console.log('  → Demo supplier & customer...');
-  await prisma.supplier.upsert({
+  // 13. Demo Suppliers & Customers
+  console.log('  → Demo suppliers & customers...');
+  const sup1 = await prisma.supplier.upsert({
     where: { code: 'SUP-00001' },
     update: {},
     create: {
       code: 'SUP-00001', name: 'Boi Ghar Publishers', nameBn: 'বই ঘর পাবলিশার্স',
-      phone: '01711111111', city: 'Dhaka', creditLimit: 100000, creditDays: 30, currentBalance: 0,
+      company: 'Boi Ghar Ltd.', phone: '01711111111', email: 'boi@boighar.com',
+      address: '12 Purana Paltan, Dhaka', city: 'Dhaka',
+      creditLimit: 100000, creditDays: 30, openingBalance: 0, currentBalance: 0,
+      notes: 'Main book supplier', isActive: true,
     },
   });
-  await prisma.supplier.upsert({
+  const sup2 = await prisma.supplier.upsert({
     where: { code: 'SUP-00002' },
     update: {},
     create: {
       code: 'SUP-00002', name: 'Maktaba Al Islamia', nameBn: 'মাকতাবা আল ইসলামিয়া',
-      phone: '01722222222', city: 'Dhaka', creditLimit: 50000, creditDays: 15, currentBalance: 0,
+      company: 'Maktaba Islamia Publishers', phone: '01722222222',
+      address: '5 Lalbagh Road, Dhaka', city: 'Dhaka',
+      creditLimit: 50000, creditDays: 15, openingBalance: 0, currentBalance: 0,
+      notes: 'Islamic book supplier', isActive: true,
+    },
+  });
+  const sup3 = await prisma.supplier.upsert({
+    where: { code: 'SUP-00003' },
+    update: {},
+    create: {
+      code: 'SUP-00003', name: 'Scholar Stationery Depot', nameBn: 'স্কলার স্টেশনারি ডিপো',
+      company: 'Scholar Industries Ltd.', phone: '01733333333',
+      address: '88 Banani C/A, Dhaka', city: 'Dhaka',
+      creditLimit: 80000, creditDays: 20, openingBalance: 5000, currentBalance: 5000,
+      notes: 'Stationery & office supplies', isActive: true,
     },
   });
   await prisma.customer.upsert({
@@ -607,8 +1070,16 @@ async function main() {
   await prisma.customer.upsert({
     where: { code: 'CUS-00002' },
     update: {},
-    create: { code: 'CUS-00002', name: 'Madrasa Al Amin', nameBn: 'মাদ্রাসা আল আমিন', phone: '01733333333', city: 'Dhaka', creditLimit: 20000, creditDays: 30, currentBalance: 0 },
+    create: { code: 'CUS-00002', name: 'Madrasa Al Amin', nameBn: 'মাদ্রাসা আল আমিন', phone: '01744444444', city: 'Dhaka', creditLimit: 20000, creditDays: 30, currentBalance: 0 },
   });
+
+  // 14. Demo Purchases, Payments & Returns
+  console.log('  → Demo purchases...');
+  await seedDemoPurchases(branch.id, [sup1, sup2, sup3], unitMap, adminUser.id);
+
+  // 15. Opening Capital — inject business starting funds
+  console.log('  → Opening capital journal entry...');
+  await seedOpeningCapital();
 
   console.log(`
 ✅ Seed v2 complete!
@@ -617,6 +1088,8 @@ async function main() {
    Brands  : ${BRANDS.length} seeded
    Cats    : ${CATEGORIES.length} (${CATEGORIES.filter(c => !c.parentCode).length} root + ${CATEGORIES.filter(c => c.parentCode).length} sub)
    Units   : ${UNITS.length} seeded
+   Suppliers: 3 demo suppliers seeded
+   Capital : ৳85,000 opening capital injected
   `);
 }
 

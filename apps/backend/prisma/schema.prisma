@@ -402,6 +402,7 @@ model Unit {
   products        Product[]
   purchaseItems   PurchaseItem[]
   saleItems       SaleItem[]
+  purchaseReturnItems PurchaseReturnItem[]
 
   @@map("units")
 }
@@ -449,6 +450,7 @@ model Product {
   stockMovements StockMovement[]
   productStocks ProductStock[]
   priceHistory  ProductPriceHistory[]
+  purchaseReturnItems PurchaseReturnItem[]
 
   @@index([sku])
   @@index([barcode])
@@ -570,6 +572,7 @@ model Supplier {
 
   purchases         Purchase[]
   supplierPayments  SupplierPayment[]
+  purchaseReturns   PurchaseReturn[]
 
   @@map("suppliers")
 }
@@ -663,6 +666,7 @@ model Purchase {
   payments         SupplierPayment[]
   stockMovements   StockMovement[]
   journalEntries   JournalEntry[]
+  purchaseReturns  PurchaseReturn[]
 
   @@index([branchId])
   @@index([supplierId])
@@ -693,6 +697,7 @@ model PurchaseItem {
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product  Product  @relation(fields: [productId], references: [id])
   unit     Unit?    @relation(fields: [unitId], references: [id])
+  returnItems PurchaseReturnItem[]
 
   @@map("purchase_items")
 }
@@ -1069,6 +1074,7 @@ model JournalEntry {
   incomeId        String?            @map("income_id")
   supplierPaymentId String?          @map("supplier_payment_id")
   customerPaymentId String?          @map("customer_payment_id")
+  purchaseReturnId  String?          @map("purchase_return_id")
   isVoided        Boolean            @default(false) @map("is_voided")
   voidedAt        DateTime?          @map("voided_at")
   voidedBy        String?            @map("voided_by")
@@ -1083,6 +1089,7 @@ model JournalEntry {
   income           Income?          @relation(fields: [incomeId], references: [id])
   supplierPayment  SupplierPayment? @relation(fields: [supplierPaymentId], references: [id])
   customerPayment  CustomerPayment? @relation(fields: [customerPaymentId], references: [id])
+  purchaseReturn   PurchaseReturn?  @relation("PurchaseReturnJournals", fields: [purchaseReturnId], references: [id])
 
   @@index([entryDate])
   @@index([type])
@@ -1191,6 +1198,65 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ============================================================
+// PURCHASE RETURNS
+// ============================================================
+
+model PurchaseReturn {
+  id              String         @id @default(uuid())
+  purchaseId      String         @map("purchase_id")
+  supplierId      String         @map("supplier_id")
+  returnNumber    String         @unique @map("return_number")
+  returnDate      DateTime       @map("return_date")
+  reason          String?
+  notes           String?
+  subtotal        Decimal        @default(0) @db.Decimal(15, 2)
+  taxAmount       Decimal        @default(0) @db.Decimal(15, 2) @map("tax_amount")
+  totalAmount     Decimal        @default(0) @db.Decimal(15, 2) @map("total_amount")
+  // Credit settlement: refund reduces supplier payable
+  refundMethod    String?        @map("refund_method")  // CASH | CREDIT (reduce payable)
+  status          String         @default("PENDING")    // PENDING, CONFIRMED, CANCELLED
+  isVoided        Boolean        @default(false) @map("is_voided")
+  voidedAt        DateTime?      @map("voided_at")
+  voidedBy        String?        @map("voided_by")
+  voidReason      String?        @map("void_reason")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  createdBy       String?        @map("created_by")
+
+  purchase        Purchase       @relation(fields: [purchaseId], references: [id])
+  supplier        Supplier       @relation(fields: [supplierId], references: [id])
+  items           PurchaseReturnItem[]
+  journalEntries  JournalEntry[] @relation("PurchaseReturnJournals")
+
+  @@index([purchaseId])
+  @@index([supplierId])
+  @@index([returnDate])
+  @@map("purchase_returns")
+}
+
+model PurchaseReturnItem {
+  id               String   @id @default(uuid())
+  purchaseReturnId String   @map("purchase_return_id")
+  purchaseItemId   String   @map("purchase_item_id")
+  productId        String   @map("product_id")
+  unitId           String?  @map("unit_id")
+  quantity         Decimal  @db.Decimal(15, 4)
+  unitCost         Decimal  @db.Decimal(15, 4) @map("unit_cost")
+  taxRate          Decimal  @default(0) @db.Decimal(5, 2) @map("tax_rate")
+  taxAmount        Decimal  @default(0) @db.Decimal(15, 4) @map("tax_amount")
+  totalAmount      Decimal  @db.Decimal(15, 4) @map("total_amount")
+  reason           String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  purchaseReturn PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
+  purchaseItem   PurchaseItem   @relation(fields: [purchaseItemId], references: [id])
+  product        Product        @relation(fields: [productId], references: [id])
+  unit           Unit?          @relation(fields: [unitId], references: [id])
+
+  @@map("purchase_return_items")
 }
 
 // ============================================================

@@ -24,6 +24,7 @@ export interface CreateJournalEntryInput {
   incomeId?: string;
   supplierPaymentId?: string;
   customerPaymentId?: string;
+  purchaseReturnId?: string;
   createdBy?: string;
 }
 
@@ -76,6 +77,7 @@ export class AccountingService {
         incomeId: input.incomeId,
         supplierPaymentId: input.supplierPaymentId,
         customerPaymentId: input.customerPaymentId,
+        purchaseReturnId: input.purchaseReturnId,
         createdBy: input.createdBy,
         lines: {
           create: input.lines.map((line) => ({

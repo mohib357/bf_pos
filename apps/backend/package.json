@@ -16,14 +16,15 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "cross-env NODE_ENV=test API_URL=http://127.0.0.1:3001/api/v1 npx jest --config test/jest-e2e.json --forceExit",
     "db:migrate": "prisma migrate dev",
     "db:migrate:prod": "prisma migrate deploy",
     "test:integration": "jest --config test/jest-integration.json",
     "db:seed": "ts-node --transpile-only prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "test:e2e:managed": "cross-env SERVER_MANAGED=true NODE_ENV=test API_URL=http://127.0.0.1:3001/api/v1 npx jest --config test/jest-e2e.json --forceExit"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
@@ -74,6 +75,7 @@
     "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^7.1.0",
     "@typescript-eslint/parser": "^7.1.0",
+    "cross-env": "^10.1.0",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.3",
@@ -114,3 +116,4 @@
     "forceExit": true
   }
 }
+

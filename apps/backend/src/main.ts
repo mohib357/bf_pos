@@ -23,9 +23,24 @@ async function bootstrap() {
   app.use(compression());
   app.use(cookieParser());
 
-  // CORS
+  // CORS — fully driven by CORS_ORIGINS env var
+  // Dev default: localhost:3000; Test: also 127.0.0.1:3000; Prod: https://pos.domain.com
+  const allOrigins = new Set([
+    ...corsOrigins,
+    frontendUrl,
+    // Always allow in non-production for local tooling (Playwright, curl)
+    ...(nodeEnv !== 'production' ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : []),
+  ]);
+
   app.enableCors({
-    origin: corsOrigins,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, server-to-server)
+      if (!origin) return callback(null, true);
+      if (allOrigins.has(origin)) return callback(null, true);
+      // Check prefix match for wildcard-style entries (e.g. https://pos.domain.com)
+      const allowed = [...allOrigins].some(o => origin.startsWith(o));
+      callback(null, allowed);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language'],
