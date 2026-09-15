@@ -1,8 +1,10 @@
 import {
   IsString, IsOptional, IsUUID, IsNotEmpty, IsNumber,
-  IsArray, ValidateNested, IsEnum, Min, IsDateString,
+  IsArray, ValidateNested, IsEnum, Min, IsDateString, IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+// ─── Sale Item ────────────────────────────────────────────────────────────────
 
 export class SaleItemDto {
   @IsUUID()
@@ -28,6 +30,11 @@ export class SaleItemDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  discountAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   taxRate?: number;
 
   @IsOptional()
@@ -35,8 +42,10 @@ export class SaleItemDto {
   notes?: string;
 }
 
+// ─── Sale Payment ─────────────────────────────────────────────────────────────
+
 export class SalePaymentDto {
-  @IsEnum(['CASH', 'BANK_TRANSFER', 'MOBILE_BANKING', 'CARD', 'CHEQUE', 'CREDIT'])
+  @IsEnum(['CASH', 'BANK_TRANSFER', 'CARD', 'BKASH', 'NAGAD', 'MOBILE_BANKING', 'DUE', 'CREDIT', 'CHEQUE'])
   method: string;
 
   @IsNumber()
@@ -49,8 +58,14 @@ export class SalePaymentDto {
 
   @IsOptional()
   @IsString()
+  provider?: string;
+
+  @IsOptional()
+  @IsString()
   notes?: string;
 }
+
+// ─── Create Sale ──────────────────────────────────────────────────────────────
 
 export class CreateSaleDto {
   @IsOptional()
@@ -94,6 +109,121 @@ export class CreateSaleDto {
   payments?: SalePaymentDto[];
 
   @IsOptional()
+  @IsBoolean()
+  isDraft?: boolean;
+
+  @IsOptional()
   @IsString()
   notes?: string;
+}
+
+// ─── Void Sale ────────────────────────────────────────────────────────────────
+
+export class VoidSaleDto {
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+}
+
+// ─── Sale Return ──────────────────────────────────────────────────────────────
+
+export class SaleReturnItemDto {
+  @IsUUID()
+  saleItemId: string;
+
+  @IsUUID()
+  productId: string;
+
+  @IsOptional()
+  @IsUUID()
+  unitId?: string;
+
+  @IsNumber()
+  @Min(0.0001)
+  quantity: number;
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class CreateSaleReturnDto {
+  @IsUUID()
+  saleId: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaleReturnItemDto)
+  items: SaleReturnItemDto[];
+
+  @IsOptional()
+  @IsEnum(['CASH', 'BANK_TRANSFER', 'CARD', 'BKASH', 'NAGAD', 'MOBILE_BANKING', 'DUE', 'CREDIT'])
+  refundMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+// ─── Add Payment ──────────────────────────────────────────────────────────────
+
+export class AddSalePaymentDto {
+  @IsEnum(['CASH', 'BANK_TRANSFER', 'CARD', 'BKASH', 'NAGAD', 'MOBILE_BANKING', 'DUE', 'CREDIT'])
+  method: string;
+
+  @IsNumber()
+  @Min(0)
+  amount: number;
+
+  @IsOptional()
+  @IsString()
+  referenceNo?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+// ─── Sale Query ───────────────────────────────────────────────────────────────
+
+export class SaleQueryDto {
+  @IsOptional()
+  page?: number;
+
+  @IsOptional()
+  limit?: number;
+
+  @IsOptional()
+  search?: string;
+
+  @IsOptional()
+  branchId?: string;
+
+  @IsOptional()
+  customerId?: string;
+
+  @IsOptional()
+  cashierId?: string;
+
+  @IsOptional()
+  status?: string;
+
+  @IsOptional()
+  paymentMethod?: string;
+
+  @IsOptional()
+  from?: string;
+
+  @IsOptional()
+  to?: string;
+
+  @IsOptional()
+  sortBy?: string;
+
+  @IsOptional()
+  sortOrder?: 'asc' | 'desc';
 }

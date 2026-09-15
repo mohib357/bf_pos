@@ -78,11 +78,33 @@ class CustomersController {
     return ApiResponse.success(await this.customersService.create(dto), 'Customer created', 'গ্রাহক তৈরি হয়েছে');
   }
 
+  @Post('quick')
+  @RequirePermissions('customers:create:customers')
+  async createQuick(@Body() dto: { name: string; phone?: string; nameBn?: string }) {
+    return ApiResponse.success(
+      await this.customersService.create({ name: dto.name, phone: dto.phone, nameBn: dto.nameBn }),
+      'Customer created',
+      'গ্রাহক তৈরি হয়েছে',
+    );
+  }
+
   @Get()
   @RequirePermissions('customers:read:customers')
   async findAll(@Query('page') page?: number, @Query('limit') limit?: number, @Query('search') search?: string) {
     const result = await this.customersService.findAll({ page, limit, search });
     return ApiResponse.paginated(result.data, result.total, result.page, result.limit);
+  }
+
+  @Get(':id/due')
+  @RequirePermissions('customers:read:customers')
+  async getDue(@Param('id', ParseUUIDPipe) id: string) {
+    const customer = await this.customersService.findOne(id);
+    return ApiResponse.success({
+      id: customer.id,
+      name: customer.name,
+      currentBalance: customer.currentBalance,
+      creditLimit: customer.creditLimit,
+    });
   }
 
   @Get(':id')

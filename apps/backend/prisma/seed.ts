@@ -238,6 +238,7 @@ const SEQUENCES = [
   { module: 'stock_adjustment',  prefix: 'ADJ', separator: '-', padding: 6, currentNo: 0 },
   { module: 'stock_count',       prefix: 'SC',  separator: '-', padding: 6, currentNo: 0 },
   { module: 'purchase_return',   prefix: 'PR',  separator: '-', padding: 6, currentNo: 0 },
+  { module: 'sale_return',       prefix: 'SR',  separator: '-', padding: 6, currentNo: 0 },
 ];
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────

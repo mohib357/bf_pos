@@ -27,6 +27,7 @@ import { AccountingModule } from './modules/accounting/accounting.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { AppCacheModule } from './modules/cache/cache.module';
 import { HealthModule } from './modules/health/health.module';
+import { CashRegisterModule } from './modules/cash-register/cash-register.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -88,6 +89,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     AppCacheModule,
     HealthModule,
     NotificationsModule,
+    CashRegisterModule,
   ],
   providers: [
     // Global throttle guard — applies "default" tier to all routes

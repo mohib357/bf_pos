@@ -78,6 +78,10 @@ enum PaymentMethod {
   CARD
   CHEQUE
   CREDIT
+  BKASH
+  NAGAD
+  MIXED
+  DUE
 }
 
 enum PaymentStatus {
@@ -403,6 +407,7 @@ model Unit {
   purchaseItems   PurchaseItem[]
   saleItems       SaleItem[]
   purchaseReturnItems PurchaseReturnItem[]
+  saleReturnItems     SaleReturnItem[]
 
   @@map("units")
 }
@@ -451,6 +456,7 @@ model Product {
   productStocks ProductStock[]
   priceHistory  ProductPriceHistory[]
   purchaseReturnItems PurchaseReturnItem[]
+  saleReturnItems     SaleReturnItem[]
 
   @@index([sku])
   @@index([barcode])
@@ -611,6 +617,7 @@ model Customer {
   group            CustomerGroup?    @relation(fields: [groupId], references: [id])
   sales            Sale[]
   customerPayments CustomerPayment[]
+  saleReturns      SaleReturn[]
 
   @@map("customers")
 }
@@ -766,6 +773,7 @@ model Sale {
   payments       CustomerPayment[]
   stockMovements StockMovement[]
   journalEntries JournalEntry[]
+  saleReturns    SaleReturn[]
 
   @@index([branchId])
   @@index([customerId])
@@ -794,6 +802,7 @@ model SaleItem {
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
   unit    Unit?   @relation(fields: [unitId], references: [id])
+  returnItems SaleReturnItem[]
 
   @@map("sale_items")
 }
@@ -998,10 +1007,18 @@ model CashRegister {
   userId        String   @map("user_id")
   name          String
   openingBalance Decimal @default(0) @db.Decimal(15, 2) @map("opening_balance")
+  cashSales     Decimal  @default(0) @db.Decimal(15, 2) @map("cash_sales")
+  cashRefunds   Decimal  @default(0) @db.Decimal(15, 2) @map("cash_refunds")
+  cashExpenses  Decimal  @default(0) @db.Decimal(15, 2) @map("cash_expenses")
+  cashAdjustments Decimal @default(0) @db.Decimal(15, 2) @map("cash_adjustments")
+  expectedCash  Decimal? @db.Decimal(15, 2) @map("expected_cash")
+  actualCash    Decimal? @db.Decimal(15, 2) @map("actual_cash")
+  difference    Decimal? @db.Decimal(15, 2)
   closingBalance Decimal? @db.Decimal(15, 2) @map("closing_balance")
   openedAt      DateTime @default(now()) @map("opened_at")
   closedAt      DateTime? @map("closed_at")
-  status        String   @default("OPEN")
+  closedBy      String?  @map("closed_by")
+  status        String   @default("OPEN")  // OPEN | CLOSED
   notes         String?
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -1075,6 +1092,7 @@ model JournalEntry {
   supplierPaymentId String?          @map("supplier_payment_id")
   customerPaymentId String?          @map("customer_payment_id")
   purchaseReturnId  String?          @map("purchase_return_id")
+  saleReturnId      String?          @map("sale_return_id")
   isVoided        Boolean            @default(false) @map("is_voided")
   voidedAt        DateTime?          @map("voided_at")
   voidedBy        String?            @map("voided_by")
@@ -1090,6 +1108,7 @@ model JournalEntry {
   supplierPayment  SupplierPayment? @relation(fields: [supplierPaymentId], references: [id])
   customerPayment  CustomerPayment? @relation(fields: [customerPaymentId], references: [id])
   purchaseReturn   PurchaseReturn?  @relation("PurchaseReturnJournals", fields: [purchaseReturnId], references: [id])
+  saleReturn       SaleReturn?      @relation("SaleReturnJournals", fields: [saleReturnId], references: [id])
 
   @@index([entryDate])
   @@index([type])
@@ -1257,6 +1276,66 @@ model PurchaseReturnItem {
   unit           Unit?          @relation(fields: [unitId], references: [id])
 
   @@map("purchase_return_items")
+}
+
+// ============================================================
+// SALE RETURNS
+// ============================================================
+
+model SaleReturn {
+  id              String        @id @default(uuid())
+  saleId          String        @map("sale_id")
+  customerId      String?       @map("customer_id")
+  returnNumber    String        @unique @map("return_number")
+  returnDate      DateTime      @map("return_date")
+  reason          String?
+  notes           String?
+  subtotal        Decimal       @default(0) @db.Decimal(15, 2)
+  taxAmount       Decimal       @default(0) @db.Decimal(15, 2) @map("tax_amount")
+  totalAmount     Decimal       @default(0) @db.Decimal(15, 2) @map("total_amount")
+  refundMethod    PaymentMethod @default(CASH) @map("refund_method")
+  refundAmount    Decimal       @default(0) @db.Decimal(15, 2) @map("refund_amount")
+  status          String        @default("CONFIRMED")           // CONFIRMED | CANCELLED
+  isVoided        Boolean       @default(false) @map("is_voided")
+  voidedAt        DateTime?     @map("voided_at")
+  voidedBy        String?       @map("voided_by")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  createdBy       String?       @map("created_by")
+
+  sale            Sale                @relation(fields: [saleId], references: [id])
+  customer        Customer?           @relation(fields: [customerId], references: [id])
+  items           SaleReturnItem[]
+  journalEntries  JournalEntry[]      @relation("SaleReturnJournals")
+
+  @@index([saleId])
+  @@index([returnDate])
+  @@map("sale_returns")
+}
+
+model SaleReturnItem {
+  id             String   @id @default(uuid())
+  saleReturnId   String   @map("sale_return_id")
+  saleItemId     String   @map("sale_item_id")
+  productId      String   @map("product_id")
+  unitId         String?  @map("unit_id")
+  quantity       Decimal  @db.Decimal(15, 4)
+  unitPrice      Decimal  @db.Decimal(15, 4) @map("unit_price")
+  unitCost       Decimal  @default(0) @db.Decimal(15, 4) @map("unit_cost")
+  discountRate   Decimal  @default(0) @db.Decimal(5, 2) @map("discount_rate")
+  discountAmount Decimal  @default(0) @db.Decimal(15, 4) @map("discount_amount")
+  taxRate        Decimal  @default(0) @db.Decimal(5, 2) @map("tax_rate")
+  taxAmount      Decimal  @default(0) @db.Decimal(15, 4) @map("tax_amount")
+  totalAmount    Decimal  @db.Decimal(15, 4) @map("total_amount")
+  reason         String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  saleReturn SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
+  saleItem   SaleItem   @relation(fields: [saleItemId], references: [id])
+  product    Product    @relation(fields: [productId], references: [id])
+  unit       Unit?      @relation(fields: [unitId], references: [id])
+
+  @@map("sale_return_items")
 }
 
 // ============================================================

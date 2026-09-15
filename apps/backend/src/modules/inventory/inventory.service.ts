@@ -95,16 +95,36 @@ export class InventoryService {
       },
     });
 
-    // Update product stock
-    await db.productStock.update({
-      where: {
-        productId_warehouseId: {
+    // Update product stock — use atomic update to prevent concurrent overselling
+    if (!isInward) {
+      // Atomic: UPDATE product_stocks SET quantity = quantity - X WHERE quantity >= X
+      // This prevents race conditions on the same stock record
+      const updateResult = await db.productStock.updateMany({
+        where: {
           productId: dto.productId,
           warehouseId: dto.warehouseId,
+          quantity: { gte: parseFloat(qty.toFixed(4)) },
         },
-      },
-      data: { quantity: balanceAfter.toFixed(4) },
-    });
+        data: { quantity: balanceAfter.toFixed(4) },
+      });
+
+      if (updateResult.count === 0) {
+        // Another concurrent transaction already consumed the stock
+        throw new BadRequestException(
+          `Insufficient stock for product ${dto.productId} (concurrent update — please retry)`,
+        );
+      }
+    } else {
+      await db.productStock.update({
+        where: {
+          productId_warehouseId: {
+            productId: dto.productId,
+            warehouseId: dto.warehouseId,
+          },
+        },
+        data: { quantity: balanceAfter.toFixed(4) },
+      });
+    }
   }
 
   private isInwardMovement(type: StockMovementType): boolean {
