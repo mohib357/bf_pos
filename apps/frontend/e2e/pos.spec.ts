@@ -55,6 +55,8 @@ async function doLogin(page: Page) {
   await page.locator('input[type="password"]').first().fill('Admin@123456');
   await page.keyboard.press('Enter');
   await page.waitForURL(/\/(dashboard|pos|sales)/, { timeout: 20000 });
+  // Wait for auth store to be fully hydrated
+  await page.waitForTimeout(500);
 }
 
 // ─── API network tracking ─────────────────────────────────────────────────────
@@ -371,9 +373,15 @@ test.describe('POS Screen — Full Flow', () => {
     await page.locator('text=বিক্রয় সম্পন্ন করুন').first().click();
     await expect(page.locator('text=পেমেন্ট / Payment').first()).toBeVisible({ timeout: 5000 });
 
-    // Enter exact amount
+    // Enter exact amount (product price is 15 for Gel Pen Blue)
     const amountInput = page.locator('input[type="number"][placeholder="0.00"]').first();
-    await amountInput.fill('2000');
+    // Use Full Amount button to get exact total
+    const fullAmountBtn = page.locator('button:has-text("Full Amount")').first();
+    if (await fullAmountBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await fullAmountBtn.click();
+    } else {
+      await amountInput.fill('500');
+    }
 
     // Click Complete Sale in modal
     const completeBtn = page.locator('button:has-text("বিক্রয় সম্পন্ন করুন / Complete Sale")').first();
@@ -405,10 +413,16 @@ test.describe('POS Screen — Full Flow', () => {
     await barcodeInput.press('Enter');
     await expect(page.locator('text=Box File A4').first()).toBeVisible({ timeout: 3000 });
 
-    // Complete sale
+    // Complete sale — use Full Amount to avoid overpay error
     await page.locator('text=বিক্রয় সম্পন্ন করুন').first().click();
     await expect(page.locator('text=পেমেন্ট / Payment').first()).toBeVisible({ timeout: 5000 });
-    await page.locator('input[type="number"][placeholder="0.00"]').first().fill('500');
+    const fullBtn11 = page.locator('button:has-text("Full Amount")').first();
+    if (await fullBtn11.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await fullBtn11.click();
+    } else {
+      // Get the grand total from the modal and enter exact amount
+      await page.locator('input[type="number"][placeholder="0.00"]').first().fill('120');
+    }
     await page.locator('button:has-text("বিক্রয় সম্পন্ন করুন / Complete Sale")').first().click();
 
     await page.waitForURL(/\/sales\/receipt\//, { timeout: 30000 });

@@ -285,8 +285,10 @@ export class SalesService {
         paidAmount = nonDuePaid;
 
         // Total must equal sum of all payment methods (including DUE)
+        // Allow cash overpay (customer gives more cash, gets change) but reject non-cash overpay
         const totalPaymentsSum = nonDuePaid.plus(duePaid);
-        if (totalPaymentsSum.greaterThan(totalAmount.plus(new Decimal('0.01')))) {
+        const isOnlyCashPayment = nonDuePayments.length > 0 && nonDuePayments.every((p) => p.method === 'CASH');
+        if (!isOnlyCashPayment && totalPaymentsSum.greaterThan(totalAmount.plus(new Decimal('0.01')))) {
           throw new BadRequestException(
             `Payment total (${totalPaymentsSum.toFixed(2)}) exceeds sale total (${totalAmount.toFixed(2)})`,
           );
